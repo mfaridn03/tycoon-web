@@ -24,23 +24,26 @@ function getHighestCards(
     return sorted.slice(0, count);
 }
 
+function findPlayerByRank(
+    ranks: Record<PlayerId, PlayerRank>,
+    target: PlayerRank,
+): PlayerId {
+    return Number(
+        (Object.entries(ranks) as [string, PlayerRank][]).find(
+            ([, r]) => r === target,
+        )![0],
+    ) as PlayerId;
+}
+
 export function buildTradeState(
     state: GameState,
 ): TradeState {
     const ranks = state.previousRanks!;
 
-    const tycoonId = (Object.entries(ranks) as [string, PlayerRank][]).find(
-        ([, r]) => r === PlayerRank.Tycoon,
-    )![0] as unknown as PlayerId;
-    const richId = (Object.entries(ranks) as [string, PlayerRank][]).find(
-        ([, r]) => r === PlayerRank.Rich,
-    )![0] as unknown as PlayerId;
-    const poorId = (Object.entries(ranks) as [string, PlayerRank][]).find(
-        ([, r]) => r === PlayerRank.Poor,
-    )![0] as unknown as PlayerId;
-    const beggarId = (Object.entries(ranks) as [string, PlayerRank][]).find(
-        ([, r]) => r === PlayerRank.Beggar,
-    )![0] as unknown as PlayerId;
+    const tycoonId = findPlayerByRank(ranks, PlayerRank.Tycoon);
+    const richId = findPlayerByRank(ranks, PlayerRank.Rich);
+    const poorId = findPlayerByRank(ranks, PlayerRank.Poor);
+    const beggarId = findPlayerByRank(ranks, PlayerRank.Beggar);
 
     const beggarHighest = getHighestCards(
         state.hands[beggarId],
@@ -71,17 +74,6 @@ export function buildTradeState(
     ];
 
     return { requirements, completed: [false, false] };
-}
-
-function findPlayerByRank(
-    ranks: Record<PlayerId, PlayerRank>,
-    target: PlayerRank,
-): PlayerId {
-    return Number(
-        (Object.entries(ranks) as [string, PlayerRank][]).find(
-            ([, r]) => r === target,
-        )![0],
-    ) as PlayerId;
 }
 
 export function startTradePhase(state: GameState): GameState {
