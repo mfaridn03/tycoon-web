@@ -82,11 +82,27 @@ describe("applyMove (play cards)", () => {
         return result.state;
     }
 
+    it("rejects opening play that does not include 3D", () => {
+        const s = startedRound1();
+        const activeId = s.activePlayerId;
+        const non3DCard = s.hands[activeId].find(
+            (card) => !(card.rank === "3" && card.suit === "D"),
+        );
+
+        expect(non3DCard).toBeDefined();
+
+        const result = dispatch(s, {
+            type: "play",
+            playerId: activeId,
+            cards: [non3DCard!],
+        });
+        expect(result.ok).toBe(false);
+    });
+
     it("plays a valid single card", () => {
         const s = startedRound1();
         const activeId = s.activePlayerId;
-        const hand = s.hands[activeId];
-        const card = hand[0];
+        const card = new Card("3", "D");
 
         const result = dispatch(s, { type: "play", playerId: activeId, cards: [card] });
         expect(result.ok).toBe(true);
@@ -260,6 +276,19 @@ describe("Revolution", () => {
         let s = r1.state;
 
         expect(s.revolutionActive).toBe(false);
+
+        // Simulate a later lead after 3D has already been spent.
+        s = {
+            ...s,
+            hands: [
+                s.hands[0].filter(
+                    (card) => !(card.rank === "3" && card.suit === "D"),
+                ),
+                s.hands[1],
+                s.hands[2],
+                s.hands[3],
+            ],
+        };
 
         // P0 plays four 4s
         const r = dispatch(s, {

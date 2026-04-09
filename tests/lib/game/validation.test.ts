@@ -85,6 +85,19 @@ describe("validatePlay", () => {
     it("accepts valid pair on empty table", () => {
         const s = makeState();
         const r = validatePlay(s, 0, [new Card("5", "H"), new Card("5", "S")]);
+        expect(r.valid).toBe(false);
+    });
+
+    it("accepts opening play when it includes 3D", () => {
+        const s = makeState({
+            hands: [
+                [new Card("3", "D"), new Card("3", "H"), new Card("K", "C")],
+                [new Card("7", "D"), new Card("7", "H"), new Card("9", "S")],
+                [new Card("A", "D"), new Card("A", "S")],
+                [new Card("2", "C")],
+            ],
+        });
+        const r = validatePlay(s, 0, [new Card("3", "D"), new Card("3", "H")]);
         expect(r.valid).toBe(true);
     });
 
@@ -162,8 +175,23 @@ describe("getLegalPlays", () => {
         const plays = getLegalPlays(s, 0);
         const singles = plays.filter((p) => p.length === 1);
         const pairs = plays.filter((p) => p.length === 2);
-        expect(singles).toHaveLength(4);
-        expect(pairs).toHaveLength(1); // pair of 5s
+        expect(singles).toHaveLength(1);
+        expect(pairs).toHaveLength(0);
+    });
+
+    it("allows only opening plays that include 3D", () => {
+        const s = makeState({
+            hands: [
+                [new Card("3", "D"), new Card("3", "H"), new Card("K", "C")],
+                [new Card("7", "D"), new Card("7", "H"), new Card("9", "S")],
+                [new Card("A", "D"), new Card("A", "S")],
+                [new Card("2", "C")],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+
+        expect(plays).toHaveLength(2);
+        expect(plays.every((play) => play.some((card) => card.rank === "3" && card.suit === "D"))).toBe(true);
     });
 
     it("only returns plays matching current trick pattern", () => {

@@ -193,7 +193,7 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
 // ---------------------------------------------------------------------------
 
 async function main() {
-    console.log("=== TYCOON (Daifugō) — CLI ===\n");
+    console.log("=== TYCOON — CLI ===\n");
 
     let state = createInitialGameState();
 

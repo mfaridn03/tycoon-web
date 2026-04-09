@@ -13,6 +13,20 @@ function cardInHand(hand: Card[], card: Card): boolean {
     return hand.some((c) => c.equals(card));
 }
 
+function isThreeOfDiamonds(card: Card): boolean {
+    return card.rank === "3" && card.suit === "D";
+}
+
+function openingLeadMustIncludeThreeOfDiamonds(
+    state: GameState,
+    playerId: PlayerId,
+): boolean {
+    return (
+        state.trick.topPlay === null &&
+        state.hands[playerId].some(isThreeOfDiamonds)
+    );
+}
+
 function allSameRank(cards: Card[]): boolean {
     if (cards.length === 0) return false;
     const rank = cards[0].rank;
@@ -83,6 +97,16 @@ export function validatePlay(
     const pattern = patternFromLength(cards.length);
     if (pattern === null) {
         return { valid: false, reason: "Invalid number of cards" };
+    }
+
+    if (
+        openingLeadMustIncludeThreeOfDiamonds(state, playerId) &&
+        !cards.some(isThreeOfDiamonds)
+    ) {
+        return {
+            valid: false,
+            reason: "Opening play must include 3D",
+        };
     }
 
     const { trick } = state;
@@ -186,6 +210,13 @@ export function getLegalPlays(
 
             const combos = combinations(group, size);
             for (const combo of combos) {
+                if (
+                    openingLeadMustIncludeThreeOfDiamonds(state, playerId) &&
+                    !combo.some(isThreeOfDiamonds)
+                ) {
+                    continue;
+                }
+
                 if (trick.topPlay !== null) {
                     const play = new Play(combo);
                     if (!play.higherThan(trick.topPlay, rankOrder)) continue;
