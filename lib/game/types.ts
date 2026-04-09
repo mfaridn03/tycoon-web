@@ -52,7 +52,7 @@ export function getActiveRankOrder(): RankOrder {
     return activeRankOrder;
 }
 
-/** Call when game state changes (e.g. revolution). Drives `>` on Card and default `higherThan`. */
+/** Call when game state changes (e.g. revolution). Drives `>` on Card/Play and default `higherThan`. */
 export function setActiveRankOrder(order: RankOrder): void {
     activeRankOrder = order;
 }
@@ -71,6 +71,9 @@ export enum PlayType {
     // Joker, // any Joker plays (TODO: implement later)
     // ThreeSpade // specifically only when 3S is played against unpaired Joker
 }
+
+// Relational ops on Play use first card’s rank strength (all cards share rank). Ignores `PlayType`.
+// `higherThan` still requires same `PlayType` — use that when legality matters, not raw `>`.
 export class Play implements Comparable<Play> {
     public readonly cards: Card[];
     public readonly type: PlayType;
@@ -105,6 +108,17 @@ export class Play implements Comparable<Play> {
                     throw new Error(`Invalid card length at Play constructor: ${cards.length}`);
             }
         }
+    }
+
+    valueOf(): number {
+        return this.cards[0].valueOf();
+    }
+
+    [Symbol.toPrimitive](hint: "default" | "string" | "number"): string | number {
+        if (hint === "number" || hint === "default") {
+            return this.cards[0].valueOf();
+        }
+        return this.cards.map((c) => c.toString()).join(" ");
     }
 
     higherThan(other: Play, rankOrder?: RankOrder) {
