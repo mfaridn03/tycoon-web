@@ -62,52 +62,65 @@ function isHigherRank(rank: Rank, otherRank: Rank, rankOrder?: RankOrder) {
     return order[rank] > order[otherRank];
 }
 
-export enum PlayType {
+/** Card count / shape of the play (single, pair, triple, four-of-a-kind). */
+export enum PlayPattern {
     One,
     Two,
     Three,
-    EightStop, // for any plays containing only 8
-    Revolution, // 4 of the same Rank, overrides EightStop if four 8s
-    // Joker, // any Joker plays (TODO: implement later)
-    // ThreeSpade // specifically only when 3S is played against unpaired Joker
+    Four,
 }
 
-// Relational ops on Play use first card’s rank strength (all cards share rank). Ignores `PlayType`.
-// `higherThan` still requires same `PlayType` — use that when legality matters, not raw `>`.
+/** Special rules triggered by the play; composable (e.g. four 8s = EightStop + Revolution). */
+export enum PlayEffect {
+    /** Play uses only 8s (any count). */
+    EightStop,
+    /** Four of the same rank — revolution. */
+    Revolution,
+    // Joker, // TODO: joker plays
+    // ThreeSpade // TODO: 3S vs Joker edge case
+}
+
+function patternFromCardCount(length: number): PlayPattern {
+    switch (length) {
+        case 1:
+            return PlayPattern.One;
+        case 2:
+            return PlayPattern.Two;
+        case 3:
+            return PlayPattern.Three;
+        case 4:
+            return PlayPattern.Four;
+        default:
+            throw new Error(`Invalid card length at Play constructor: ${length}`);
+    }
+}
+
+function computePlayEffects(cards: Card[]): Set<PlayEffect> {
+    const effects = new Set<PlayEffect>();
+    if (cards.length > 0 && cards.every((c) => c.rank === "8")) {
+        effects.add(PlayEffect.EightStop);
+    }
+    if (cards.length === 4) {
+        effects.add(PlayEffect.Revolution);
+    }
+    return effects;
+}
+
+// Relational ops on Play use first card’s rank strength (all cards share rank). Ignores pattern/effects.
+// `higherThan` requires same `PlayPattern` — use that when legality matters, not raw `>`.
 export class Play implements Comparable<Play> {
     public readonly cards: Card[];
-    public readonly type: PlayType;
+    public readonly pattern: PlayPattern;
+    /** Frozen; use `.has()` for effect checks. */
+    public readonly effects: ReadonlySet<PlayEffect>;
 
     // play validity checking should be done before class creation
     constructor(cards: Card[]) {
         this.cards = [...cards];
-        
-        // so at this point `cards` is a valid play, so we can do this easily
-        if (cards[0].rank === "8") this.type = PlayType.EightStop;
-        else {
-            switch(cards.length) {
-                case 1:
-                    this.type = PlayType.One;
-                    break;
-                
-                case 2:
-                    this.type = PlayType.Two;
-                    break;
-
-                case 3:
-                    this.type = PlayType.Three;
-                    break;
-
-                case 4:
-                    this.type = PlayType.Revolution;
-                    break;
-                
-                default:
-                    // shouldn't be possible to reach this
-                    console.log(`How did we get here? Play() cards.length=${cards.length}`);
-                    throw new Error(`Invalid card length at Play constructor: ${cards.length}`);
-            }
-        }
+        this.pattern = patternFromCardCount(cards.length);
+        const effectSet = computePlayEffects(cards);
+        Object.freeze(effectSet);
+        this.effects = effectSet;
     }
 
     valueOf(): number {
@@ -122,7 +135,7 @@ export class Play implements Comparable<Play> {
     }
 
     higherThan(other: Play, rankOrder?: RankOrder) {
-        if (this.type !== other.type) return false;
+        if (this.pattern !== other.pattern) return false;
         return this.cards[0].higherThan(other.cards[0], rankOrder);
     }
 }

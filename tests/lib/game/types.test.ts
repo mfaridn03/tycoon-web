@@ -5,7 +5,8 @@ import {
     createRankOrder,
     DEFAULT_RANK_ORDER,
     Play,
-    PlayType,
+    PlayEffect,
+    PlayPattern,
     setActiveRankOrder,
 } from "../../../lib/game/types";
 
@@ -89,29 +90,62 @@ describe("Play", () => {
         setActiveRankOrder(DEFAULT_RANK_ORDER);
     });
 
-    it("assigns play types based on card count and rank", () => {
-        expect(new Play([new Card("4", "D")]).type).toBe(PlayType.One);
-        expect(new Play([new Card("4", "D"), new Card("4", "S")]).type).toBe(PlayType.Two);
-        expect(new Play([new Card("4", "D"), new Card("4", "S"), new Card("4", "H")]).type).toBe(PlayType.Three);
+    it("assigns pattern from card count", () => {
+        expect(new Play([new Card("4", "D")]).pattern).toBe(PlayPattern.One);
+        expect(new Play([new Card("4", "D"), new Card("4", "S")]).pattern).toBe(PlayPattern.Two);
+        expect(new Play([new Card("4", "D"), new Card("4", "S"), new Card("4", "H")]).pattern).toBe(
+            PlayPattern.Three,
+        );
         expect(
             new Play([
                 new Card("4", "D"),
                 new Card("4", "S"),
                 new Card("4", "H"),
                 new Card("4", "C"),
-            ]).type,
-        ).toBe(PlayType.Revolution);
+            ]).pattern,
+        ).toBe(PlayPattern.Four);
+    });
+
+    it("adds Revolution for any four-of-a-kind", () => {
+        const fourFours = new Play([
+            new Card("4", "D"),
+            new Card("4", "S"),
+            new Card("4", "H"),
+            new Card("4", "C"),
+        ]);
+        expect(fourFours.effects.has(PlayEffect.Revolution)).toBe(true);
+        expect(fourFours.effects.has(PlayEffect.EightStop)).toBe(false);
+    });
+
+    it("adds EightStop for plays that are only 8s", () => {
+        expect(new Play([new Card("8", "D")]).effects.has(PlayEffect.EightStop)).toBe(true);
+        expect(
+            new Play([new Card("8", "D"), new Card("8", "S")]).effects.has(PlayEffect.EightStop),
+        ).toBe(true);
         expect(
             new Play([
                 new Card("8", "D"),
                 new Card("8", "S"),
                 new Card("8", "H"),
                 new Card("8", "C"),
-            ]).type,
-        ).toBe(PlayType.EightStop);
+            ]).effects.has(PlayEffect.EightStop),
+        ).toBe(true);
     });
 
-    it("compares plays only when play types match", () => {
+    it("four 8s get both EightStop and Revolution", () => {
+        const fourEights = new Play([
+            new Card("8", "D"),
+            new Card("8", "S"),
+            new Card("8", "H"),
+            new Card("8", "C"),
+        ]);
+        expect(fourEights.pattern).toBe(PlayPattern.Four);
+        expect(fourEights.effects.has(PlayEffect.EightStop)).toBe(true);
+        expect(fourEights.effects.has(PlayEffect.Revolution)).toBe(true);
+        expect(fourEights.effects.size).toBe(2);
+    });
+
+    it("compares plays only when patterns match", () => {
         const lowSingle = new Play([new Card("5", "D")]);
         const highSingle = new Play([new Card("9", "S")]);
         const pair = new Play([new Card("9", "D"), new Card("9", "H")]);
