@@ -4,7 +4,6 @@ import {
     type GameEvent,
     type GameState,
     type PlayerId,
-    PlayerRank,
     type RankOrder,
 } from "./types";
 
@@ -53,6 +52,10 @@ export interface PlayOption {
     cards: Card[];
 }
 
+export type TrickHistoryEntry =
+    | { type: "play"; playerId: PlayerId; cards: Card[] }
+    | { type: "pass"; playerId: PlayerId };
+
 export function buildPlayOptions(
     legalPlays: Card[][],
     rankOrder: RankOrder,
@@ -71,6 +74,18 @@ export function buildPlayOptions(
 
 export function canPass(state: GameState): boolean {
     return state.trick.topPlay !== null;
+}
+
+export function formatTrickHistoryEntry(
+    entry: TrickHistoryEntry,
+    isCurrentTopPlay = false,
+): string {
+    if (entry.type === "pass") {
+        return `${playerLabel(entry.playerId)} passed.`;
+    }
+
+    const suffix = isCurrentTopPlay ? " <" : "";
+    return `${playerLabel(entry.playerId)} played: ${formatCards(entry.cards)}${suffix}`;
 }
 
 // ---------------------------------------------------------------------------

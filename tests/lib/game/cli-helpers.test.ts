@@ -3,10 +3,8 @@ import {
     Card,
     type GameState,
     Play,
-    PlayEffect,
     type PlayerId,
     PlayerRank,
-    RoundPhase,
 } from "../../../lib/game/types";
 import { DEFAULT_RANK_ORDER } from "../../../lib/game/types";
 import { REVERSED_RANK_ORDER } from "../../../lib/game/constants";
@@ -17,6 +15,7 @@ import {
     formatCards,
     formatEvent,
     formatScores,
+    formatTrickHistoryEntry,
     playerLabel,
     selectLowestCards,
     sortCards,
@@ -152,7 +151,7 @@ describe("canPass", () => {
     };
 
     it("returns false when no topPlay (new trick)", () => {
-        expect(canPass({ trick: baseTrick } as GameState)).toBe(false);
+        expect(canPass({ trick: baseTrick } as unknown as GameState)).toBe(false);
     });
 
     it("returns true when topPlay exists", () => {
@@ -161,7 +160,35 @@ describe("canPass", () => {
             topPlay: new Play([new Card("5", "D")]),
             topPlayerId: 0 as PlayerId,
         };
-        expect(canPass({ trick } as GameState)).toBe(true);
+        expect(canPass({ trick } as unknown as GameState)).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Trick history formatting
+// ---------------------------------------------------------------------------
+
+describe("formatTrickHistoryEntry", () => {
+    it("formats played cards and marks the current top play", () => {
+        const msg = formatTrickHistoryEntry(
+            {
+                type: "play",
+                playerId: 3,
+                cards: [new Card("3", "D"), new Card("3", "H")],
+            },
+            true,
+        );
+
+        expect(msg).toBe("Player D played: 3D 3H <");
+    });
+
+    it("formats passes", () => {
+        const msg = formatTrickHistoryEntry({
+            type: "pass",
+            playerId: 1,
+        });
+
+        expect(msg).toBe("Player B passed.");
     });
 });
 

@@ -7,23 +7,24 @@ import {
     type Card,
     type GameEvent,
     type GameState,
-    type PlayerId,
     RoundPhase,
 } from "../lib/game/types";
 import {
     buildPlayOptions,
     canPass,
-    formatCard,
     formatCards,
     formatEvent,
     formatScores,
     formatTradeRequirement,
+    formatTrickHistoryEntry,
     playerLabel,
     selectLowestCards,
     sortCards,
+    type TrickHistoryEntry,
 } from "../lib/game/cli-helpers";
 
 const rl = readline.createInterface({ input, output });
+const isInteractiveCli = Boolean(input.isTTY && output.isTTY);
 
 function defaultShuffle(deck: Card[]): Card[] {
     const arr = [...deck];
@@ -38,11 +39,82 @@ function printSeparator() {
     console.log("─".repeat(50));
 }
 
+function clearScreenIfInteractive() {
+    if (!isInteractiveCli) return;
+    output.write("\x1b[2J\x1b[3J\x1b[H");
+}
+
 function printEvents(events: GameEvent[]) {
     for (const ev of events) {
         const msg = formatEvent(ev);
         if (msg) console.log(msg);
     }
+}
+
+function printMessages(messages: string[]) {
+    for (const message of messages) {
+        console.log(message);
+    }
+}
+
+function getEventMessages(events: GameEvent[]): string[] {
+    return events.flatMap((ev) => {
+        const msg = formatEvent(ev);
+        return msg ? [msg] : [];
+    });
+}
+
+function isCurrentTopHistoryEntry(
+    state: GameState,
+    entry: TrickHistoryEntry,
+): boolean {
+    if (entry.type !== "play" || !state.trick.topPlay || state.trick.topPlayerId === null) {
+        return false;
+    }
+
+    return (
+        entry.playerId === state.trick.topPlayerId &&
+        formatCards(entry.cards) === formatCards(state.trick.topPlay.cards)
+    );
+}
+
+function renderPlayScreen(
+    state: GameState,
+    trickHistory: TrickHistoryEntry[],
+    eventMessages: string[],
+) {
+    const pid = state.activePlayerId;
+    const rankOrder = getRankOrder(state.revolutionActive);
+    const hand = sortCards(state.hands[pid], rankOrder);
+    const legal = getLegalPlays(state, pid);
+    const options = buildPlayOptions(legal, rankOrder);
+    const passAllowed = canPass(state);
+
+    clearScreenIfInteractive();
+    printSeparator();
+    console.log(`Scores: ${formatScores(state.scores)}`);
+
+    for (const entry of trickHistory) {
+        console.log(
+            formatTrickHistoryEntry(entry, isCurrentTopHistoryEntry(state, entry)),
+        );
+    }
+
+    for (const msg of eventMessages) {
+        console.log(msg);
+    }
+
+    console.log(`\n${playerLabel(pid)}'s turn`);
+    console.log(`Hand: ${formatCards(hand)}`);
+
+    if (passAllowed) {
+        console.log("  0) Pass");
+    }
+    for (const opt of options) {
+        console.log(`  ${opt.index}) ${opt.label}`);
+    }
+
+    return { options, passAllowed };
 }
 
 async function promptNumber(prompt: string, min: number, max: number): Promise<number> {
@@ -122,40 +194,22 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
 async function handlePlayPhase(state: GameState): Promise<GameState> {
     let s = state;
     let safety = 0;
+    let trickHistory: TrickHistoryEntry[] = [];
+    let eventMessages: string[] = [];
 
     while (s.phase === RoundPhase.Play && safety < 1000) {
         safety++;
         const pid = s.activePlayerId;
-        const rankOrder = getRankOrder(s.revolutionActive);
-        const hand = sortCards(s.hands[pid], rankOrder);
-
-        printSeparator();
-        console.log(`Scores: ${formatScores(s.scores)}`);
-        if (s.trick.topPlay) {
-            console.log(
-                `Table: ${formatCards(s.trick.topPlay.cards)} (by ${playerLabel(s.trick.topPlayerId!)})`,
-            );
-        } else {
-            console.log("Table: empty (new trick)");
-        }
-
-        console.log(`\n${playerLabel(pid)}'s turn`);
-        console.log(`Hand: ${formatCards(hand)}`);
-
-        const legal = getLegalPlays(s, pid);
-        const options = buildPlayOptions(legal, rankOrder);
-        const passAllowed = canPass(s);
+        const { options, passAllowed } = renderPlayScreen(
+            s,
+            trickHistory,
+            eventMessages,
+        );
+        eventMessages = [];
 
         if (options.length === 0 && !passAllowed) {
             console.log("No legal plays and cannot pass — this shouldn't happen.");
             break;
-        }
-
-        if (passAllowed) {
-            console.log("  0) Pass");
-        }
-        for (const opt of options) {
-            console.log(`  ${opt.index}) ${opt.label}`);
         }
 
         const min = passAllowed ? 0 : 1;
@@ -163,12 +217,13 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
         const choice = await promptNumber("> ", min, max);
 
         let result;
+        let historyEntry: TrickHistoryEntry;
         if (choice === 0) {
-            console.log(`${playerLabel(pid)} passed.`);
+            historyEntry = { type: "pass", playerId: pid };
             result = dispatch(s, { type: "pass", playerId: pid });
         } else {
             const chosen = options[choice - 1];
-            console.log(`${playerLabel(pid)} played: ${chosen.label}`);
+            historyEntry = { type: "play", playerId: pid, cards: chosen.cards };
             result = dispatch(s, {
                 type: "play",
                 playerId: pid,
@@ -177,12 +232,20 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
         }
 
         if (!result.ok) {
-            console.log(`Error: ${result.reason}`);
+            eventMessages = [`Error: ${result.reason}`];
             continue;
         }
 
-        printEvents(result.events);
+        trickHistory = [...trickHistory, historyEntry];
+        eventMessages = getEventMessages(result.events);
+        if (result.events.some((event) => event.type === "trickEnded")) {
+            trickHistory = [];
+        }
         s = result.state;
+    }
+
+    if (eventMessages.length > 0) {
+        printMessages(eventMessages);
     }
 
     return s;
