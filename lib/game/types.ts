@@ -143,6 +143,101 @@ export class Play implements Comparable<Play> {
 
 export type Hand = Card[];
 
+// ---------------------------------------------------------------------------
+// Game-state types
+// ---------------------------------------------------------------------------
+
+export type PlayerId = 0 | 1 | 2 | 3;
+
+export enum PlayerRank {
+    Tycoon = "Tycoon",
+    Rich = "Rich",
+    Poor = "Poor",
+    Beggar = "Beggar",
+}
+
+export enum RoundPhase {
+    Deal = "Deal",
+    Trade = "Trade",
+    Play = "Play",
+    Finished = "Finished",
+}
+
+export interface TrickState {
+    topPlay: Play | null;
+    topPlayerId: PlayerId | null;
+    currentPattern: PlayPattern | null;
+    passedPlayerIds: PlayerId[];
+}
+
+export interface TradeRequirement {
+    giverId: PlayerId;
+    receiverId: PlayerId;
+    count: number;
+    giverCards: Card[] | null;
+    receiverCards: Card[] | null;
+}
+
+export interface TradeState {
+    requirements: TradeRequirement[];
+    completed: boolean[];
+}
+
+export interface GameState {
+    // Match level
+    scores: [number, number, number, number];
+    roundNumber: number;
+    matchFinished: boolean;
+    previousRanks: Record<PlayerId, PlayerRank> | null;
+
+    // Round level
+    phase: RoundPhase;
+    hands: [Card[], Card[], Card[], Card[]];
+    activePlayerId: PlayerId;
+    revolutionActive: boolean;
+    finishOrder: PlayerId[];
+    finishedPlayers: PlayerId[];
+
+    // Trick level
+    trick: TrickState;
+
+    // Trade level (null outside trade phase)
+    tradeState: TradeState | null;
+}
+
+// ---------------------------------------------------------------------------
+// Actions & results
+// ---------------------------------------------------------------------------
+
+export type GameAction =
+    | { type: "startRound" }
+    | { type: "completeTrade"; playerId: PlayerId; cards: Card[] }
+    | { type: "play"; playerId: PlayerId; cards: Card[] }
+    | { type: "pass"; playerId: PlayerId };
+
+export type ActionResult =
+    | { ok: true; state: GameState; events: GameEvent[] }
+    | { ok: false; reason: string };
+
+export type GameEvent =
+    | { type: "trickEnded"; winner: PlayerId }
+    | { type: "eightStop"; playerId: PlayerId }
+    | { type: "revolution" }
+    | { type: "counterRevolution" }
+    | { type: "playerFinished"; playerId: PlayerId; position: number }
+    | { type: "roundFinished"; ranks: Record<PlayerId, PlayerRank> }
+    | { type: "matchFinished"; winner: PlayerId };
+
+// ---------------------------------------------------------------------------
+// Validation helpers (used by validation layer)
+// ---------------------------------------------------------------------------
+
+export type ValidateResult =
+    | { valid: true }
+    | { valid: false; reason: string };
+
+export type ShuffleFn = (deck: Card[]) => Card[];
+
 // Relational ops (`>`, `<`, …) use numeric coercion: `valueOf` / `Symbol.toPrimitive` with hint `number`.
 // Same rank ⇒ equal strength for `>` (both `a > b` and `b > a` false). Suits ignored for order.
 // `===` / `==` are still reference equality for two Card instances; use `equals()` for value equality.
