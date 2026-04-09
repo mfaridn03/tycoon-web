@@ -80,32 +80,6 @@ export enum PlayEffect {
     // ThreeSpade // TODO: 3S vs Joker edge case
 }
 
-function patternFromCardCount(length: number): PlayPattern {
-    switch (length) {
-        case 1:
-            return PlayPattern.One;
-        case 2:
-            return PlayPattern.Two;
-        case 3:
-            return PlayPattern.Three;
-        case 4:
-            return PlayPattern.Four;
-        default:
-            throw new Error(`Invalid card length at Play constructor: ${length}`);
-    }
-}
-
-function computePlayEffects(cards: Card[]): Set<PlayEffect> {
-    const effects = new Set<PlayEffect>();
-    if (cards.length > 0 && cards.every((c) => c.rank === "8")) {
-        effects.add(PlayEffect.EightStop);
-    }
-    if (cards.length === 4) {
-        effects.add(PlayEffect.Revolution);
-    }
-    return effects;
-}
-
 // Relational ops on Play use first card’s rank strength (all cards share rank). Ignores pattern/effects.
 // `higherThan` requires same `PlayPattern` — use that when legality matters, not raw `>`.
 export class Play implements Comparable<Play> {
@@ -117,8 +91,9 @@ export class Play implements Comparable<Play> {
     // play validity checking should be done before class creation
     constructor(cards: Card[]) {
         this.cards = [...cards];
-        this.pattern = patternFromCardCount(cards.length);
-        const effectSet = computePlayEffects(cards);
+        this.pattern = this.patternFromCardCount(cards.length);
+        const effectSet = this.computePlayEffects(cards);
+        
         Object.freeze(effectSet);
         this.effects = effectSet;
     }
@@ -137,6 +112,32 @@ export class Play implements Comparable<Play> {
     higherThan(other: Play, rankOrder?: RankOrder) {
         if (this.pattern !== other.pattern) return false;
         return this.cards[0].higherThan(other.cards[0], rankOrder);
+    }
+
+    private patternFromCardCount(length: number): PlayPattern {
+        switch (length) {
+            case 1:
+                return PlayPattern.One;
+            case 2:
+                return PlayPattern.Two;
+            case 3:
+                return PlayPattern.Three;
+            case 4:
+                return PlayPattern.Four;
+            default:
+                throw new Error(`Invalid card length at Play constructor: ${length}`);
+        }
+    }
+
+    private computePlayEffects(cards: Card[]): Set<PlayEffect> {
+        const effects = new Set<PlayEffect>();
+        if (cards.length > 0 && cards.every((c) => c.rank === "8")) {
+            effects.add(PlayEffect.EightStop);
+        }
+        if (cards.length === 4) {
+            effects.add(PlayEffect.Revolution);
+        }
+        return effects;
     }
 }
 
