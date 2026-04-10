@@ -230,8 +230,16 @@ export function CardDemo({
     onDealComplete?.();
   }, [dealPhase, onDealComplete]);
 
+  // When it's not our turn anymore, clear selection (prevents stale highlight).
+  useEffect(() => {
+    if (playMode) return;
+    setSelectedIndices(new Set());
+  }, [playMode]);
+
   function toggleSelection(index: number) {
+    // Only allow input while it's this player's turn.
     if (dealPhase !== "done") return;
+    if (!playMode) return;
     // Greyed-out cards cannot be selected
     if (legalCardIndices !== null && !legalCardIndices.has(index)) return;
     setSelectedIndices((prev) => {
@@ -407,7 +415,9 @@ export function CardDemo({
         {drawnCards.map((card, i) => {
           const isSelected = selectedIndices.has(i);
           const isGreyed =
-            legalCardIndices !== null && !legalCardIndices.has(i);
+            // When not this player's turn, treat all cards as disabled/grey.
+            !playMode ||
+            (legalCardIndices !== null && !legalCardIndices.has(i));
           return (
             <div
               key={`${drawId}-${i}`}
