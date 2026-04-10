@@ -12,8 +12,7 @@ import {
 import { createDeck } from "@/lib/game/constants";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { sortPlayerHand } from "@/lib/game/sort-player-hand";
-import type { Card, Rank } from "@/lib/game/types";
-import { DEFAULT_RANK_SEQUENCE } from "@/lib/game/types";
+import type { Card } from "@/lib/game/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
@@ -32,116 +31,6 @@ const INTERACTIVE_SELECTOR = "[data-card-demo-interactive='true']";
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
 
-/** Lexicographic k-combinations of indices (indices sorted ascending). */
-function combinations(indices: number[], k: number): number[][] {
-  const n = indices.length;
-  if (k < 0 || k > n) return [];
-  if (k === 0) return [[]];
-  const out: number[][] = [];
-  const path: number[] = [];
-  function dfs(start: number) {
-    if (path.length === k) {
-      out.push([...path]);
-      return;
-    }
-    for (let j = start; j < n; j++) {
-      path.push(indices[j]!);
-      dfs(j + 1);
-      path.pop();
-    }
-  }
-  dfs(0);
-  return out;
-}
-
-function buildChoiceSequences(cards: Card[]): {
-  single: number[][];
-  pair: number[][];
-  triple: number[][];
-  revolution: number[][];
-} {
-  const byRank = new Map<Rank, number[]>();
-  for (let i = 0; i < cards.length; i++) {
-    const r = cards[i]!.rank;
-    if (!byRank.has(r)) byRank.set(r, []);
-    byRank.get(r)!.push(i);
-  }
-
-  const single: number[][] = cards.map((_, i) => [i]);
-  const pair: number[][] = [];
-  const triple: number[][] = [];
-  const revolution: number[][] = [];
-
-  for (const rank of DEFAULT_RANK_SEQUENCE) {
-    const indices = byRank.get(rank);
-    if (!indices || indices.length === 0) continue;
-    if (indices.length >= 2) pair.push(...combinations(indices, 2));
-    if (indices.length >= 3) triple.push(...combinations(indices, 3));
-    if (indices.length >= 4) revolution.push(...combinations(indices, 4));
-  }
-
-  return { single, pair, triple, revolution };
-}
-
-function buildLegalChoiceSequences(
-  cards: Card[],
-  legalPlays: Card[][],
-): {
-  single: number[][];
-  pair: number[][];
-  triple: number[][];
-  revolution: number[][];
-} {
-  const indexByKey = new Map<string, number>();
-  cards.forEach((card, index) => {
-    indexByKey.set(`${card.rank}:${card.suit}`, index);
-  });
-
-  const sequences = {
-    single: [] as number[][],
-    pair: [] as number[][],
-    triple: [] as number[][],
-    revolution: [] as number[][],
-  };
-
-  for (const play of legalPlays) {
-    const indices = play
-      .map((card) => indexByKey.get(`${card.rank}:${card.suit}`))
-      .filter((index): index is number => index !== undefined)
-      .sort((a, b) => a - b);
-
-    if (indices.length === 0) continue;
-
-    switch (indices.length) {
-      case 1:
-        sequences.single.push(indices);
-        break;
-      case 2:
-        sequences.pair.push(indices);
-        break;
-      case 3:
-        sequences.triple.push(indices);
-        break;
-      case 4:
-        sequences.revolution.push(indices);
-        break;
-      default:
-        break;
-    }
-  }
-
-  return sequences;
-}
-
-type ChoiceKey = "single" | "pair" | "triple" | "revolution";
-
-const INITIAL_CURSORS: Record<ChoiceKey, number> = {
-  single: 0,
-  pair: 0,
-  triple: 0,
-  revolution: 0,
-};
-
 export type CardDemoPlayMode = {
   canPass: boolean;
   onPlay: (cards: Card[]) => void;
@@ -155,7 +44,7 @@ export type CardDemoProps = {
   externalStackRef?: RefObject<HTMLDivElement | null>;
   /** Pre-dealt player hand; embedded mount starts deal when length is 13. */
   playerCards?: Card[] | null;
-  /** Legal plays for current turn, in choice order. */
+  /** Legal plays for current turn. Cards not in any legal play are greyed out. */
   legalPlays?: Card[][] | null;
   className?: string;
   onDealComplete?: () => void;
@@ -181,9 +70,6 @@ export function CardDemo({
   );
   const selectedIndicesRef = useRef(selectedIndices);
   selectedIndicesRef.current = selectedIndices;
-  const lastChoiceKeyRef = useRef<ChoiceKey | null>(null);
-  const [choiceCursors, setChoiceCursors] =
-    useState<Record<ChoiceKey, number>>(INITIAL_CURSORS);
   const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
   const [drawId, setDrawId] = useState(0);
   const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>(
@@ -195,13 +81,27 @@ export function CardDemo({
   const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const choiceSequences = useMemo(
-    () =>
-      legalPlays && legalPlays.length > 0
-        ? buildLegalChoiceSequences(drawnCards, legalPlays)
-        : buildChoiceSequences(drawnCards),
-    [drawnCards, legalPlays],
-  );
+
+  /**
+   * Set of card indices that appear in at least one legal play.
+   * null  → no filtering (not in playMode or legalPlays not provided).
+   * empty → every card is greyed out (no legal plays exist).
+   */
+  const legalCardIndices = useMemo<Set<number> | null>(() => {
+    if (!playMode || legalPlays === null) return null;
+    const indexByKey = new Map<string, number>();
+    drawnCards.forEach((card, i) => {
+      indexByKey.set(`${card.rank}:${card.suit}`, i);
+    });
+    const set = new Set<number>();
+    for (const play of legalPlays) {
+      for (const card of play) {
+        const idx = indexByKey.get(`${card.rank}:${card.suit}`);
+        if (idx !== undefined) set.add(idx);
+      }
+    }
+    return set;
+  }, [playMode, legalPlays, drawnCards]);
 
   useEffect(
     () => () => {
@@ -217,8 +117,6 @@ export function CardDemo({
     cardSlotsRef.current = [];
     setFlyOffsets([]);
     setSelectedIndices(new Set());
-    setChoiceCursors(INITIAL_CURSORS);
-    lastChoiceKeyRef.current = null;
 
     const sorted = sortPlayerHand(cards);
     setDrawnCards(sorted);
@@ -245,38 +143,11 @@ export function CardDemo({
     const sorted = sortPlayerHand(playerCards);
     setDrawnCards(sorted);
     setSelectedIndices(new Set());
-    setChoiceCursors(INITIAL_CURSORS);
-    lastChoiceKeyRef.current = null;
   }, [playerCards, gameHandSync, dealPhase, variant]);
-
-  function pickNextChoice(key: ChoiceKey) {
-    const list = choiceSequences[key];
-    if (list.length === 0) return;
-    const isConsecutive = lastChoiceKeyRef.current === key;
-
-    // Switching buttons: reset all cursors to 0 and pick first combo for this button.
-    if (!isConsecutive) {
-      setChoiceCursors(INITIAL_CURSORS);
-      setSelectedIndices(new Set(list[0]!));
-      lastChoiceKeyRef.current = key;
-      return;
-    }
-
-    // Same button twice in a row: advance that cursor (wrap) and pick new combo.
-    setChoiceCursors((prev) => {
-      const currentIndex = prev[key] ?? 0;
-      const nextIndex = (currentIndex + 1) % list.length;
-      setSelectedIndices(new Set(list[nextIndex]!));
-      return { ...prev, [key]: nextIndex };
-    });
-    lastChoiceKeyRef.current = key;
-  }
 
   const clearSelectionAndResetChoices = useCallback(() => {
     if (selectedIndicesRef.current.size === 0) return;
     setSelectedIndices(new Set());
-    setChoiceCursors(INITIAL_CURSORS);
-    lastChoiceKeyRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -361,12 +232,8 @@ export function CardDemo({
 
   function toggleSelection(index: number) {
     if (dealPhase !== "done") return;
-    const isCurrentlySelected = selectedIndices.has(index);
-    // Manual unselect -> reset cursors and consecutive tracking.
-    if (isCurrentlySelected) {
-      setChoiceCursors(INITIAL_CURSORS);
-      lastChoiceKeyRef.current = null;
-    }
+    // Greyed-out cards cannot be selected
+    if (legalCardIndices !== null && !legalCardIndices.has(index)) return;
     setSelectedIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
@@ -419,20 +286,7 @@ export function CardDemo({
 
   const isAnimating = !["idle", "done"].includes(dealPhase);
   const canUseChoices = dealPhase === "done";
-  const showDemoPatternPickers =
-    canUseChoices &&
-    playMode !== null &&
-    (choiceSequences.single.length > 0 ||
-      choiceSequences.pair.length > 0 ||
-      choiceSequences.triple.length > 0 ||
-      choiceSequences.revolution.length > 0);
   const showPlayModeBar = canUseChoices && playMode;
-  const {
-    single: singleChoices,
-    pair: pairChoices,
-    triple: tripleChoices,
-    revolution: revolutionChoices,
-  } = choiceSequences;
 
   const showOwnStack = variant === "standalone" || !externalStackRef;
   const rootClass =
@@ -505,64 +359,6 @@ export function CardDemo({
         </div>
       )}
 
-      {/* Pattern pickers — lowest-first sequences per click (below deck) */}
-      {showDemoPatternPickers && (
-        <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
-          {singleChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("single")}
-              data-card-demo-interactive="true"
-              disabled={
-                !canUseChoices ||
-                choiceCursors.single >= singleChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Single
-            </button>
-          )}
-          {pairChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("pair")}
-              data-card-demo-interactive="true"
-              disabled={
-                !canUseChoices || choiceCursors.pair >= pairChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Pairs
-            </button>
-          )}
-          {tripleChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("triple")}
-              data-card-demo-interactive="true"
-              disabled={
-                !canUseChoices ||
-                choiceCursors.triple >= tripleChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Triples
-            </button>
-          )}
-          {revolutionChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("revolution")}
-              data-card-demo-interactive="true"
-              disabled={!canUseChoices}
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Revolution
-            </button>
-          )}
-        </div>
-      )}
-
       {showPlayModeBar && playMode && (
         <div className="flex w-full max-w-4xl flex-col items-center gap-2">
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -610,6 +406,8 @@ export function CardDemo({
           )}
         {drawnCards.map((card, i) => {
           const isSelected = selectedIndices.has(i);
+          const isGreyed =
+            legalCardIndices !== null && !legalCardIndices.has(i);
           return (
             <div
               key={`${drawId}-${i}`}
@@ -617,12 +415,11 @@ export function CardDemo({
                 cardSlotsRef.current[i] = el;
               }}
               onClick={(event) => {
-                // Prevent root outside-click handler from running when clicking card.
                 event.stopPropagation();
                 toggleSelection(i);
               }}
               data-card-demo-interactive="true"
-              className="cursor-pointer"
+              className={isGreyed ? "cursor-not-allowed" : "cursor-pointer"}
               style={{
                 width: CARD_W,
                 height: CARD_H,
@@ -699,7 +496,19 @@ export function CardDemo({
                           outline: "6px solid rgb(255, 255, 0)",
                           outlineOffset: 0,
                           pointerEvents: "none",
-                          opacity: 0.45
+                          opacity: 0.45,
+                        }}
+                      />
+                    )}
+                    {/* Grey overlay for non-legal cards */}
+                    {isGreyed && dealPhase === "done" && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          borderRadius: 6,
+                          backgroundColor: "rgba(0, 0, 0, 0.55)",
+                          pointerEvents: "none",
                         }}
                       />
                     )}
