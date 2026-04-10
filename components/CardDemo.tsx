@@ -28,6 +28,7 @@ const PLAY_MODE_BAR_MIN_H = 68;
 const CARD_W = 96;
 const CARD_H = Math.round(CARD_W * (112 / 80)); // 134
 const CARD_OVERLAP = 16; // pixels hidden by the next card
+const CARD_STEP = CARD_W - CARD_OVERLAP;
 const INTERACTIVE_SELECTOR = "[data-card-demo-interactive='true']";
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
@@ -82,10 +83,13 @@ export function CardDemo({
   const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const exitFadeFrameRef = useRef<number | null>(null);
   const drawnCardsRef = useRef<Card[]>([]);
   drawnCardsRef.current = drawnCards;
-  const pendingSyncRef = useRef<Card[] | null>(null);
-  const [exitingIndices, setExitingIndices] = useState<Set<number>>(new Set());
+  const [exitingCards, setExitingCards] = useState<
+    { card: Card; index: number; handSize: number }[]
+  >([]);
+  const [exitingCardsFading, setExitingCardsFading] = useState(false);
 
   /**
    * Set of card indices that appear in at least one legal play.
@@ -111,6 +115,9 @@ export function CardDemo({
   useEffect(
     () => () => {
       timersRef.current.forEach(clearTimeout);
+      if (exitFadeFrameRef.current !== null) {
+        cancelAnimationFrame(exitFadeFrameRef.current);
+      }
     },
     [],
   );
@@ -150,20 +157,31 @@ export function CardDemo({
     const current = drawnCardsRef.current;
     const newKeys = new Set(newSorted.map((c) => `${c.rank}:${c.suit}`));
     const exiting = current
-      .map((card, i) => ({ card, i }))
+      .map((card, index) => ({ card, index }))
       .filter(({ card }) => !newKeys.has(`${card.rank}:${card.suit}`))
-      .map(({ i }) => i);
+      .map(({ card, index }) => ({ card, index }));
 
     if (exiting.length > 0) {
-      pendingSyncRef.current = newSorted;
-      setExitingIndices(new Set(exiting));
+      setExitingCards(
+        exiting.map(({ card, index }) => ({
+          card,
+          index,
+          handSize: current.length,
+        })),
+      );
+      setExitingCardsFading(false);
       setSelectedIndices(new Set());
+      setDrawnCards(newSorted);
+      if (exitFadeFrameRef.current !== null) {
+        cancelAnimationFrame(exitFadeFrameRef.current);
+      }
+      exitFadeFrameRef.current = requestAnimationFrame(() => {
+        setExitingCardsFading(true);
+        exitFadeFrameRef.current = null;
+      });
       const t = setTimeout(() => {
-        if (pendingSyncRef.current) {
-          setDrawnCards(pendingSyncRef.current);
-          pendingSyncRef.current = null;
-        }
-        setExitingIndices(new Set());
+        setExitingCards([]);
+        setExitingCardsFading(false);
       }, 320);
       timersRef.current.push(t);
     } else {
@@ -278,14 +296,8 @@ export function CardDemo({
   }
 
   function getSlotStyle(index: number): React.CSSProperties {
-    if (exitingIndices.has(index)) {
-      return {
-        transform: "translateY(-18px) scale(0.8)",
-        opacity: 0,
-        transition: "transform 280ms ease-out, opacity 260ms ease-out",
-        pointerEvents: "none",
-      };
-    }
+    const handOffset = (index - (drawnCards.length - 1) / 2) * CARD_STEP;
+    const baseTransform = `translateX(${handOffset}px)`;
 
     const offset = flyOffsets[index] ?? { x: 0, y: 0 };
 
@@ -294,21 +306,21 @@ export function CardDemo({
         return { opacity: 0 };
       case "atStack":
         return {
-          transform: `translate(${offset.x}px, ${offset.y}px)`,
+          transform: `${baseTransform} translate(${offset.x}px, ${offset.y}px)`,
           opacity: 1,
         };
       case "flying":
       case "flipping":
         return {
-          transform: "translate(0, 0)",
+          transform: `${baseTransform} translate(0, 0)`,
           transition: `transform ${FLY_DURATION}ms ease-out ${index * FLY_STAGGER}ms`,
           opacity: 1,
         };
       case "done":
         return {
-          transform: selectedIndices.has(index)
-            ? "translateY(-20px)"
-            : "translate(0, 0)",
+          transform: `${baseTransform} ${
+            selectedIndices.has(index) ? "translateY(-20px)" : "translateY(0)"
+          }`,
           transition: "transform 150ms ease",
           opacity: 1,
         };
@@ -478,122 +490,159 @@ export function CardDemo({
               Click &apos;Draw Deck&apos; to start
             </p>
           )}
-        {drawnCards.map((card, i) => {
-          const isSelected = selectedIndices.has(i);
-          const isGreyed =
-            // When not this player's turn, treat all cards as disabled/grey.
-            !playMode ||
-            (legalCardIndices !== null && !legalCardIndices.has(i));
-          return (
-            <div
-              key={`${drawId}-${i}`}
-              ref={(el) => {
-                cardSlotsRef.current[i] = el;
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleSelection(i);
-              }}
-              data-card-demo-interactive="true"
-              className={isGreyed ? "cursor-not-allowed" : "cursor-pointer"}
-              style={{
-                width: CARD_W,
-                height: CARD_H,
-                marginLeft: i === 0 ? 0 : -CARD_OVERLAP,
-                zIndex: i,
-                ...getSlotStyle(i),
-              }}
-              title={
-                dealPhase === "done"
-                  ? cardLabel(card.rank, card.suit)
-                  : undefined
-              }
-            >
-              {/* 3-D flip container */}
-              <div
-                style={{
-                  width: CARD_W,
-                  height: CARD_H,
-                  perspective: 900,
-                }}
-              >
+        {drawnCards.length > 0 && (
+          <div className="relative w-full overflow-visible" style={{ height: CARD_H }}>
+            {exitingCards.map(({ card, index, handSize }) => {
+              const handOffset = (index - (handSize - 1) / 2) * CARD_STEP;
+              const baseTransform = `translateX(${handOffset}px)`;
+              return (
                 <div
+                  key={`exit-${drawId}-${card.rank}:${card.suit}`}
                   style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: 0,
                     width: CARD_W,
                     height: CARD_H,
-                    position: "relative",
-                    ...getFlipStyle(i),
+                    zIndex: index,
+                    transform: `${baseTransform} translateY(-18px)`,
+                    opacity: exitingCardsFading ? 0 : 1,
+                    transition: "transform 280ms ease-out, opacity 260ms ease-out",
+                    pointerEvents: "none",
                   }}
                 >
-                  {/* Back face */}
+                  <svg
+                    viewBox="0 0 80 112"
+                    width={CARD_W}
+                    height={CARD_H}
+                    xmlns="http://www.w3.org/2000/svg"
+                    style={{ display: "block" }}
+                  >
+                    <CardFaceContent rank={card.rank} suit={card.suit} />
+                  </svg>
+                </div>
+              );
+            })}
+            {drawnCards.map((card, i) => {
+              const isSelected = selectedIndices.has(i);
+              const isGreyed =
+                // When not this player's turn, treat all cards as disabled/grey.
+                !playMode ||
+                (legalCardIndices !== null && !legalCardIndices.has(i));
+              return (
+                <div
+                  key={`${drawId}-${card.rank}:${card.suit}`}
+                  ref={(el) => {
+                    cardSlotsRef.current[i] = el;
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleSelection(i);
+                  }}
+                  data-card-demo-interactive="true"
+                  className={isGreyed ? "cursor-not-allowed" : "cursor-pointer"}
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: 0,
+                    width: CARD_W,
+                    height: CARD_H,
+                    zIndex: i,
+                    ...getSlotStyle(i),
+                  }}
+                  title={
+                    dealPhase === "done"
+                      ? cardLabel(card.rank, card.suit)
+                      : undefined
+                  }
+                >
+                  {/* 3-D flip container */}
                   <div
                     style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
                       width: CARD_W,
                       height: CARD_H,
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
+                      perspective: 900,
                     }}
                   >
-                    <CardBack />
-                  </div>
-
-                  {/* Front face — pre-rotated so it shows after flip */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: CARD_W,
-                      height: CARD_H,
-                      backfaceVisibility: "hidden",
-                      WebkitBackfaceVisibility: "hidden",
-                      transform: "rotateY(180deg)",
-                    }}
-                  >
-                    <svg
-                      viewBox="0 0 80 112"
-                      width={CARD_W}
-                      height={CARD_H}
-                      xmlns="http://www.w3.org/2000/svg"
-                      style={{ display: "block" }}
+                    <div
+                      style={{
+                        width: CARD_W,
+                        height: CARD_H,
+                        position: "relative",
+                        ...getFlipStyle(i),
+                      }}
                     >
-                      <CardFaceContent rank={card.rank} suit={card.suit} />
-                    </svg>
-                    {/* Selection ring overlay */}
-                    {isSelected && dealPhase === "done" && (
+                      {/* Back face */}
                       <div
                         style={{
                           position: "absolute",
-                          inset: 0,
-                          borderRadius: 6,
-                          outline: "6px solid rgb(255, 255, 0)",
-                          outlineOffset: 0,
-                          pointerEvents: "none",
-                          opacity: 0.45,
+                          top: 0,
+                          left: 0,
+                          width: CARD_W,
+                          height: CARD_H,
+                          backfaceVisibility: "hidden",
+                          WebkitBackfaceVisibility: "hidden",
                         }}
-                      />
-                    )}
-                    {/* Grey overlay for non-legal cards */}
-                    {isGreyed && dealPhase === "done" && (
+                      >
+                        <CardBack />
+                      </div>
+
+                      {/* Front face — pre-rotated so it shows after flip */}
                       <div
                         style={{
                           position: "absolute",
-                          inset: 0,
-                          borderRadius: 6,
-                          backgroundColor: "rgba(0, 0, 0, 0.55)",
-                          pointerEvents: "none",
+                          top: 0,
+                          left: 0,
+                          width: CARD_W,
+                          height: CARD_H,
+                          backfaceVisibility: "hidden",
+                          WebkitBackfaceVisibility: "hidden",
+                          transform: "rotateY(180deg)",
                         }}
-                      />
-                    )}
+                      >
+                        <svg
+                          viewBox="0 0 80 112"
+                          width={CARD_W}
+                          height={CARD_H}
+                          xmlns="http://www.w3.org/2000/svg"
+                          style={{ display: "block" }}
+                        >
+                          <CardFaceContent rank={card.rank} suit={card.suit} />
+                        </svg>
+                        {/* Selection ring overlay */}
+                        {isSelected && dealPhase === "done" && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              borderRadius: 6,
+                              outline: "6px solid rgb(255, 255, 0)",
+                              outlineOffset: 0,
+                              pointerEvents: "none",
+                              opacity: 0.45,
+                            }}
+                          />
+                        )}
+                        {/* Grey overlay for non-legal cards */}
+                        {isGreyed && dealPhase === "done" && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              borderRadius: 6,
+                              backgroundColor: "rgba(0, 0, 0, 0.55)",
+                              pointerEvents: "none",
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
