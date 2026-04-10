@@ -22,6 +22,7 @@ const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const FLIP_DURATION = 350;
 const FLIP_STAGGER = 40;
+const PLAY_MODE_BAR_MIN_H = 68;
 
 // Card dimensions — SVG viewBox is 80×112, keep the same aspect ratio
 const CARD_W = 96;
@@ -295,6 +296,7 @@ export function CardDemo({
   const isAnimating = !["idle", "done"].includes(dealPhase);
   const canUseChoices = dealPhase === "done";
   const showPlayModeBar = canUseChoices && playMode;
+  const reservePlayModeBarSpace = variant === "embedded" || showPlayModeBar;
 
   const showOwnStack = variant === "standalone" || !externalStackRef;
   const rootClass =
@@ -367,36 +369,65 @@ export function CardDemo({
         </div>
       )}
 
-      {showPlayModeBar && playMode && (
-        <div className="flex w-full max-w-4xl flex-col items-center gap-2">
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {playMode.canPass && (
-              <button
-                type="button"
-                onClick={() => playMode.onPass()}
-                data-card-demo-interactive="true"
-                className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-white active:bg-zinc-300"
-              >
-                Pass
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                const idxs = [...selectedIndices].sort((a, b) => a - b);
-                const cards = idxs.map((i) => drawnCards[i]!);
-                playMode.onPlay(cards);
-              }}
-              disabled={selectedIndices.size === 0}
-              data-card-demo-interactive="true"
-              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-100 active:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Play selected
-            </button>
-          </div>
-          {playMode.playError ? (
-            <p className="text-center text-xs text-red-300">{playMode.playError}</p>
-          ) : null}
+      {reservePlayModeBarSpace && (
+        <div
+          className="flex w-full max-w-4xl flex-col items-center justify-start gap-2"
+          style={{ minHeight: PLAY_MODE_BAR_MIN_H }}
+        >
+          {showPlayModeBar && playMode ? (
+            <>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {playMode.canPass && (
+                  <button
+                    type="button"
+                    onClick={() => playMode.onPass()}
+                    data-card-demo-interactive="true"
+                    className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-white active:bg-zinc-300"
+                  >
+                    Pass
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idxs = [...selectedIndices].sort((a, b) => a - b);
+                    const cards = idxs.map((i) => drawnCards[i]!);
+                    playMode.onPlay(cards);
+                  }}
+                  disabled={selectedIndices.size === 0}
+                  data-card-demo-interactive="true"
+                  className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-100 active:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Play selected
+                </button>
+              </div>
+              <div className="min-h-4">
+                {playMode.playError ? (
+                  <p className="text-center text-xs text-red-300">{playMode.playError}</p>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div aria-hidden="true" className="invisible flex w-full flex-col items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="rounded-full px-5 py-2 text-sm font-medium"
+                >
+                  Pass
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="rounded-full px-5 py-2 text-sm font-medium"
+                >
+                  Play selected
+                </button>
+              </div>
+              <div className="min-h-4 text-center text-xs">placeholder</div>
+            </div>
+          )}
         </div>
       )}
 
