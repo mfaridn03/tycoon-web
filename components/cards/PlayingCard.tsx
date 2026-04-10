@@ -41,7 +41,8 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
   );
 }
 
-function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
+/** SVG children only — no wrapper div, no interaction. Use inside your own <svg>. */
+export function CardFaceContent({ rank, suit }: { rank: Rank; suit: Suit }) {
   const { hex, symbol } = SUIT_META[suit];
   const isFace = FACE_RANKS.has(rank);
 
@@ -78,6 +79,10 @@ function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
       </text>
     </>
   );
+}
+
+function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
+  return <CardFaceContent rank={rank} suit={suit} />;
 }
 
 export function PlayingCard({

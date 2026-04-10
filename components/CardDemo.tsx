@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { createDeck } from "@/lib/game/constants";
 import type { Card, Suit } from "@/lib/game/types";
 import { DEFAULT_RANK_ORDER } from "@/lib/game/types";
-import { PlayingCard } from "@/components/cards/PlayingCard";
+import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
 
@@ -14,6 +14,11 @@ const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const FLIP_DURATION = 350;
 const FLIP_STAGGER = 40;
+
+// Card dimensions — SVG viewBox is 80×112, keep the same aspect ratio
+const CARD_W = 96;
+const CARD_H = Math.round(CARD_W * (112 / 80)); // 134
+const CARD_OVERLAP = 32; // pixels hidden by the next card
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
 
@@ -194,27 +199,28 @@ export function CardDemo() {
       {/* Center Stack */}
       <div
         className="relative w-full flex items-center justify-center"
-        style={{ height: 160 }}
+        style={{ height: CARD_H + 24 }}
       >
         <div
           ref={stackRef}
           className={`relative transition-transform duration-300 ${
             isAnimating ? "scale-95" : "scale-100"
           }`}
+          style={{ width: CARD_W, height: CARD_H }}
         >
           <div
-            style={{ width: 96 }}
+            style={{ width: CARD_W, height: CARD_H }}
             className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
           >
             <CardBack />
           </div>
           <div
-            style={{ width: 96 }}
+            style={{ width: CARD_W, height: CARD_H }}
             className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
           >
             <CardBack />
           </div>
-          <div style={{ width: 96 }} className="relative shadow-lg">
+          <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
             <CardBack />
           </div>
           <div className="absolute -bottom-7 left-0 right-0 text-center">
@@ -228,7 +234,7 @@ export function CardDemo() {
       {/* Hand */}
       <div
         className="flex items-end justify-center"
-        style={{ minHeight: 140 }}
+        style={{ minHeight: CARD_H + 20 }}
       >
         {drawnCards.length === 0 && dealPhase === "idle" && (
           <p className="text-zinc-600 text-sm">
@@ -244,14 +250,12 @@ export function CardDemo() {
                 cardSlotsRef.current[i] = el;
               }}
               onClick={() => toggleSelection(i)}
-              className={`cursor-pointer rounded-[6px] ${
-                dealPhase === "done" && isSelected
-                  ? "ring-2 ring-white z-10"
-                  : ""
-              }`}
+              className="cursor-pointer"
               style={{
-                width: 76,
-                marginLeft: i === 0 ? 0 : -14,
+                width: CARD_W,
+                height: CARD_H,
+                marginLeft: i === 0 ? 0 : -CARD_OVERLAP,
+                zIndex: isSelected ? 20 : i,
                 ...getSlotStyle(i),
               }}
               title={
@@ -260,25 +264,72 @@ export function CardDemo() {
                   : undefined
               }
             >
-              <div style={{ perspective: 800 }}>
-                <div className="relative" style={getFlipStyle(i)}>
+              {/* 3-D flip container */}
+              <div
+                style={{
+                  width: CARD_W,
+                  height: CARD_H,
+                  perspective: 900,
+                }}
+              >
+                <div
+                  style={{
+                    width: CARD_W,
+                    height: CARD_H,
+                    position: "relative",
+                    ...getFlipStyle(i),
+                  }}
+                >
                   {/* Back face */}
-                  <div style={{ backfaceVisibility: "hidden" }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: CARD_W,
+                      height: CARD_H,
+                      backfaceVisibility: "hidden",
+                      WebkitBackfaceVisibility: "hidden",
+                    }}
+                  >
                     <CardBack />
                   </div>
-                  {/* Front face */}
+
+                  {/* Front face — pre-rotated so it shows after flip */}
                   <div
-                    className="absolute inset-0"
                     style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: CARD_W,
+                      height: CARD_H,
                       backfaceVisibility: "hidden",
+                      WebkitBackfaceVisibility: "hidden",
                       transform: "rotateY(180deg)",
                     }}
                   >
-                    <PlayingCard
-                      rank={card.rank}
-                      suit={card.suit}
-                      className="pointer-events-none !block !w-full !h-full"
-                    />
+                    <svg
+                      viewBox="0 0 80 112"
+                      width={CARD_W}
+                      height={CARD_H}
+                      xmlns="http://www.w3.org/2000/svg"
+                      style={{ display: "block" }}
+                    >
+                      <CardFaceContent rank={card.rank} suit={card.suit} />
+                    </svg>
+                    {/* Selection ring overlay */}
+                    {isSelected && dealPhase === "done" && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          borderRadius: 6,
+                          outline: "2px solid white",
+                          outlineOffset: 1,
+                          pointerEvents: "none",
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
