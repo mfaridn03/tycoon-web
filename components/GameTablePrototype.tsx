@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -207,7 +208,7 @@ function BotHandStrip({
   const prevCardsLenRef = useRef(cards.length);
   const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (dealPhase !== "done") {
       prevCardsLenRef.current = cards.length;
       return;
