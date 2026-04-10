@@ -47,7 +47,6 @@ type SerializedAction =
       };
 
 type SerializedLogEntry = {
-    recordedAt: string;
     round: GameState["roundNumber"];
     phase: GameState["phase"];
     action: SerializedAction;
@@ -152,7 +151,6 @@ function appendGameLog(
     }
 
     const entry: SerializedLogEntry = {
-        recordedAt: new Date().toISOString(),
         round: state.roundNumber,
         phase: state.phase,
         action: serializeAction(action),
