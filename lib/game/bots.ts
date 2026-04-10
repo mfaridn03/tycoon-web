@@ -1,5 +1,10 @@
 import { getRankOrder } from "./constants";
-import { type GameState, type PlayerId, PlayPattern } from "./types";
+import {
+    type Card,
+    type GameState,
+    type PlayerId,
+    PlayPattern,
+} from "./types";
 import { getLegalPlays } from "./validation";
 
 const SUIT_ORDER = { D: 0, C: 1, H: 2, S: 3 } as const;
