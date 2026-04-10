@@ -25,10 +25,62 @@ const BOT_OVERLAP = 24;
 const HAND_SIZE = 13;
 const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
+const STACK_DEPTH = HAND_SIZE;
+const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
 
 type TablePhase = "pre" | "dealing" | "ready";
 
 type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
+
+function CenterStack({
+  stackRef,
+  progress,
+}: {
+  stackRef: RefObject<HTMLDivElement | null>;
+  progress: number;
+}) {
+  const visibleDepth = Math.max(
+    0,
+    Math.ceil((1 - progress) * STACK_DEPTH),
+  );
+  const hidden = visibleDepth === 0;
+
+  return (
+    <div
+      ref={stackRef}
+      className="relative shrink-0 overflow-visible transition-[opacity,transform] duration-300"
+      style={{
+        width: STACK_CARD_W,
+        height: STACK_CARD_H + 18,
+        opacity: hidden ? 0 : 1,
+        transform: hidden ? "scale(0.92)" : "scale(1)",
+      }}
+    >
+      {Array.from({ length: visibleDepth }, (_, index) => {
+        const layer = visibleDepth - index - 1;
+        return (
+          <div
+            key={layer}
+            style={{
+              width: STACK_CARD_W,
+              height: STACK_CARD_H,
+              position: "absolute",
+              top: layer * 1.1,
+              left: layer * 0.8,
+              opacity: 0.18 + layer * 0.05,
+              transform: `scale(${1 - layer * 0.01}) rotate(${layer * -0.2}deg)`,
+              filter: "drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18))",
+              zIndex: layer,
+              pointerEvents: "none",
+            }}
+          >
+            <CardBack />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function BotHandStrip({
   stackRef,
@@ -175,17 +227,40 @@ export function GameTablePrototype() {
   const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
   const [hands, setHands] = useState<Card[][] | null>(null);
   const [dealId, setDealId] = useState(0);
+  const [stackProgress, setStackProgress] = useState(0);
 
   const startGame = useCallback(() => {
     const deck = shuffleDeck(createDeck());
     setHands(dealFourHands(deck));
     setDealId((n) => n + 1);
+    setStackProgress(0);
     setTablePhase("dealing");
   }, []);
 
   const onPlayerDealComplete = useCallback(() => {
     setTablePhase("ready");
   }, []);
+
+  useEffect(() => {
+    if (tablePhase !== "dealing") {
+      setStackProgress(tablePhase === "ready" ? 1 : 0);
+      return;
+    }
+
+    let rafId = 0;
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const next = Math.min(1, (now - startedAt) / DEAL_DURATION);
+      setStackProgress(next);
+      if (next < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [tablePhase, dealId]);
 
   const showTable = tablePhase !== "pre";
   const [, botLeft, botTop, botRight] = hands ?? [[], [], [], []];
@@ -233,30 +308,7 @@ export function GameTablePrototype() {
             {/* Center stack + felt */}
             <div className="flex min-h-[140px] flex-col items-center justify-center gap-2">
               {showTable && (
-                <div
-                  ref={stackRef}
-                  className="relative shrink-0 transition-transform duration-300"
-                  style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
-                >
-                  <div
-                    style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
-                    className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
-                  >
-                    <CardBack />
-                  </div>
-                  <div
-                    style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
-                    className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
-                  >
-                    <CardBack />
-                  </div>
-                  <div
-                    style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
-                    className="relative shadow-lg"
-                  >
-                    <CardBack />
-                  </div>
-                </div>
+              <CenterStack stackRef={stackRef} progress={stackProgress} />
               )}
             </div>
 
