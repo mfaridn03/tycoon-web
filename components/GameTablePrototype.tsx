@@ -19,6 +19,7 @@ import {
 } from "@/lib/game/cli-helpers";
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
+import { getLegalPlays } from "@/lib/game/validation";
 import type { Card, GameEvent, GameState, PlayerId } from "@/lib/game/types";
 import { RoundPhase } from "@/lib/game/types";
 
@@ -389,6 +390,8 @@ export function GameTablePrototype() {
           playError,
         }
       : null;
+  const legalPlays =
+    playMode && gameState ? getLegalPlays(gameState, HUMAN_ID) : null;
 
   return (
     <div className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950">
@@ -474,6 +477,7 @@ export function GameTablePrototype() {
                 variant="embedded"
                 externalStackRef={stackRef}
                 playerCards={hands[0]!}
+                legalPlays={legalPlays}
                 onDealComplete={onPlayerDealComplete}
                 gameHandSync={tablePhase === "playing"}
                 playMode={playMode}

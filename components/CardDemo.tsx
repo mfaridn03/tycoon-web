@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useCallback,
   type RefObject,
@@ -82,6 +83,56 @@ function buildChoiceSequences(cards: Card[]): {
   return { single, pair, triple, revolution };
 }
 
+function buildLegalChoiceSequences(
+  cards: Card[],
+  legalPlays: Card[][],
+): {
+  single: number[][];
+  pair: number[][];
+  triple: number[][];
+  revolution: number[][];
+} {
+  const indexByKey = new Map<string, number>();
+  cards.forEach((card, index) => {
+    indexByKey.set(`${card.rank}:${card.suit}`, index);
+  });
+
+  const sequences = {
+    single: [] as number[][],
+    pair: [] as number[][],
+    triple: [] as number[][],
+    revolution: [] as number[][],
+  };
+
+  for (const play of legalPlays) {
+    const indices = play
+      .map((card) => indexByKey.get(`${card.rank}:${card.suit}`))
+      .filter((index): index is number => index !== undefined)
+      .sort((a, b) => a - b);
+
+    if (indices.length === 0) continue;
+
+    switch (indices.length) {
+      case 1:
+        sequences.single.push(indices);
+        break;
+      case 2:
+        sequences.pair.push(indices);
+        break;
+      case 3:
+        sequences.triple.push(indices);
+        break;
+      case 4:
+        sequences.revolution.push(indices);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return sequences;
+}
+
 type ChoiceKey = "single" | "pair" | "triple" | "revolution";
 
 const INITIAL_CURSORS: Record<ChoiceKey, number> = {
@@ -104,6 +155,8 @@ export type CardDemoProps = {
   externalStackRef?: RefObject<HTMLDivElement | null>;
   /** Pre-dealt player hand; embedded mount starts deal when length is 13. */
   playerCards?: Card[] | null;
+  /** Legal plays for current turn, in choice order. */
+  legalPlays?: Card[][] | null;
   className?: string;
   onDealComplete?: () => void;
   /** After initial deal, sync hand from parent without re-deal animation (shedding). */
@@ -116,6 +169,7 @@ export function CardDemo({
   variant = "standalone",
   externalStackRef,
   playerCards,
+  legalPlays = null,
   className,
   onDealComplete,
   gameHandSync = false,
@@ -128,12 +182,6 @@ export function CardDemo({
   const selectedIndicesRef = useRef(selectedIndices);
   selectedIndicesRef.current = selectedIndices;
   const lastChoiceKeyRef = useRef<ChoiceKey | null>(null);
-  const [choiceSequences, setChoiceSequences] = useState<{
-    single: number[][];
-    pair: number[][];
-    triple: number[][];
-    revolution: number[][];
-  }>({ single: [], pair: [], triple: [], revolution: [] });
   const [choiceCursors, setChoiceCursors] =
     useState<Record<ChoiceKey, number>>(INITIAL_CURSORS);
   const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
@@ -147,6 +195,13 @@ export function CardDemo({
   const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const choiceSequences = useMemo(
+    () =>
+      legalPlays && legalPlays.length > 0
+        ? buildLegalChoiceSequences(drawnCards, legalPlays)
+        : buildChoiceSequences(drawnCards),
+    [drawnCards, legalPlays],
+  );
 
   useEffect(
     () => () => {
@@ -167,7 +222,6 @@ export function CardDemo({
 
     const sorted = sortPlayerHand(cards);
     setDrawnCards(sorted);
-    setChoiceSequences(buildChoiceSequences(sorted));
     setDrawId((n) => n + 1);
     setDealPhase("measuring");
   }
@@ -190,7 +244,6 @@ export function CardDemo({
     if (dealPhase !== "done") return;
     const sorted = sortPlayerHand(playerCards);
     setDrawnCards(sorted);
-    setChoiceSequences(buildChoiceSequences(sorted));
     setSelectedIndices(new Set());
     setChoiceCursors(INITIAL_CURSORS);
     lastChoiceKeyRef.current = null;
@@ -366,10 +419,20 @@ export function CardDemo({
 
   const isAnimating = !["idle", "done"].includes(dealPhase);
   const canUseChoices = dealPhase === "done";
-  const showDemoPatternPickers = canUseChoices && !playMode;
+  const showDemoPatternPickers =
+    canUseChoices &&
+    playMode !== null &&
+    (choiceSequences.single.length > 0 ||
+      choiceSequences.pair.length > 0 ||
+      choiceSequences.triple.length > 0 ||
+      choiceSequences.revolution.length > 0);
   const showPlayModeBar = canUseChoices && playMode;
-  const { single: singleChoices, pair: pairChoices, triple: tripleChoices, revolution: revolutionChoices } =
-    choiceSequences;
+  const {
+    single: singleChoices,
+    pair: pairChoices,
+    triple: tripleChoices,
+    revolution: revolutionChoices,
+  } = choiceSequences;
 
   const showOwnStack = variant === "standalone" || !externalStackRef;
   const rootClass =
