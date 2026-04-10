@@ -316,6 +316,63 @@ export function CardDemo() {
         </div>
       </div>
 
+      {/* Pattern pickers — lowest-first sequences per click (below deck) */}
+      {drawnCards.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
+          {singleChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("single")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.single >= singleChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Single
+            </button>
+          )}
+          {pairChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("pair")}
+              disabled={
+                !canUseChoices || choiceCursors.pair >= pairChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Pairs
+            </button>
+          )}
+          {tripleChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("triple")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.triple >= tripleChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Triples
+            </button>
+          )}
+          {revolutionChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("revolution")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.revolution >= revolutionChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Revolution
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Hand */}
       <div
         className="flex items-end justify-center"
@@ -423,63 +480,6 @@ export function CardDemo() {
           );
         })}
       </div>
-
-      {/* Pattern pickers — lowest-first sequences per click */}
-      {drawnCards.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
-          {singleChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("single")}
-              disabled={
-                !canUseChoices ||
-                choiceCursors.single >= singleChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Single
-            </button>
-          )}
-          {pairChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("pair")}
-              disabled={
-                !canUseChoices || choiceCursors.pair >= pairChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Pairs
-            </button>
-          )}
-          {tripleChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("triple")}
-              disabled={
-                !canUseChoices ||
-                choiceCursors.triple >= tripleChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Triples
-            </button>
-          )}
-          {revolutionChoices.length > 0 && (
-            <button
-              type="button"
-              onClick={() => pickNextChoice("revolution")}
-              disabled={
-                !canUseChoices ||
-                choiceCursors.revolution >= revolutionChoices.length
-              }
-              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Revolution
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
