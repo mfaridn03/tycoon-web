@@ -11,7 +11,6 @@ import {
 } from "../../../lib/game/types";
 import {
     createInitialGameState,
-    dealRound,
     dispatch,
     startRound,
 } from "../../../lib/game/engine";
