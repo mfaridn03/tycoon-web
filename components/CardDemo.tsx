@@ -19,6 +19,7 @@ const FLIP_STAGGER = 40;
 const CARD_W = 96;
 const CARD_H = Math.round(CARD_W * (112 / 80)); // 134
 const CARD_OVERLAP = 16; // pixels hidden by the next card
+const INTERACTIVE_SELECTOR = "[data-card-demo-interactive='true']";
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
 
@@ -146,13 +147,20 @@ export function CardDemo() {
 
   function pickNextChoice(key: ChoiceKey) {
     const list = choiceSequences[key];
+    if (list.length === 0) return;
     setChoiceCursors((prev) => {
       const i = prev[key];
-      if (i >= list.length) return prev;
-      const indices = list[i]!;
+      const nextIndex = i % list.length;
+      const indices = list[nextIndex]!;
       setSelectedIndices(new Set(indices));
-      return { ...prev, [key]: i + 1 };
+      return { ...prev, [key]: (nextIndex + 1) % list.length };
     });
+  }
+
+  function clearSelectionAndResetChoices() {
+    if (selectedIndices.size === 0) return;
+    setSelectedIndices(new Set());
+    setChoiceCursors(INITIAL_CURSORS);
   }
 
   // measuring → compute fly offsets → atStack
@@ -269,7 +277,15 @@ export function CardDemo() {
     choiceSequences;
 
   return (
-    <div className="flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen">
+    <div
+      className="flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen"
+      onClick={(event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest(INTERACTIVE_SELECTOR)) {
+          clearSelectionAndResetChoices();
+        }
+      }}
+    >
       <h1 className="text-white text-2xl font-semibold tracking-tight">
         Card Renderer
       </h1>
@@ -277,6 +293,7 @@ export function CardDemo() {
       <button
         onClick={drawDeck}
         disabled={isAnimating}
+        data-card-demo-interactive="true"
         className="px-6 py-2.5 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed z-10 relative"
       >
         Draw Deck
@@ -319,6 +336,7 @@ export function CardDemo() {
             <button
               type="button"
               onClick={() => pickNextChoice("single")}
+              data-card-demo-interactive="true"
               disabled={
                 !canUseChoices ||
                 choiceCursors.single >= singleChoices.length
@@ -332,6 +350,7 @@ export function CardDemo() {
             <button
               type="button"
               onClick={() => pickNextChoice("pair")}
+              data-card-demo-interactive="true"
               disabled={
                 !canUseChoices || choiceCursors.pair >= pairChoices.length
               }
@@ -344,6 +363,7 @@ export function CardDemo() {
             <button
               type="button"
               onClick={() => pickNextChoice("triple")}
+              data-card-demo-interactive="true"
               disabled={
                 !canUseChoices ||
                 choiceCursors.triple >= tripleChoices.length
@@ -357,6 +377,7 @@ export function CardDemo() {
             <button
               type="button"
               onClick={() => pickNextChoice("revolution")}
+              data-card-demo-interactive="true"
               disabled={
                 !canUseChoices ||
                 choiceCursors.revolution >= revolutionChoices.length
@@ -388,6 +409,7 @@ export function CardDemo() {
                 cardSlotsRef.current[i] = el;
               }}
               onClick={() => toggleSelection(i)}
+              data-card-demo-interactive="true"
               className="cursor-pointer"
               style={{
                 width: CARD_W,
