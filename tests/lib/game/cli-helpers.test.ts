@@ -188,7 +188,7 @@ describe("formatTrickHistoryEntry", () => {
             playerId: 1,
         });
 
-        expect(msg).toBe("Player B passed.");
+        expect(msg).toBe("Player B passed");
     });
 });
 

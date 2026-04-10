@@ -81,7 +81,7 @@ export function formatTrickHistoryEntry(
     isCurrentTopPlay = false,
 ): string {
     if (entry.type === "pass") {
-        return `${playerLabel(entry.playerId)} passed.`;
+        return `${playerLabel(entry.playerId)} passed`;
     }
 
     const suffix = isCurrentTopPlay ? " <" : "";

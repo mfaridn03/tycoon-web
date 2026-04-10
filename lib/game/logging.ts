@@ -11,7 +11,7 @@ import {
 } from "./types";
 
 const PLAYER_CODES: Record<PlayerId, string> = {
-    0: "A",
+    0: "X",
     1: "B",
     2: "C",
     3: "D",
