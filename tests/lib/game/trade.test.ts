@@ -38,6 +38,7 @@ function makeTradeState(): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: true,
         trick: { topPlay: null, topPlayerId: null, currentPattern: null, passedPlayerIds: [] },
         tradeState: null,
     };

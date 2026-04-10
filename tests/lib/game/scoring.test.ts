@@ -28,6 +28,7 @@ function makeFinishedRoundState(
         finishOrder,
         finishedPlayers: [...finishOrder],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: false,
         trick: { topPlay: null, topPlayerId: null, currentPattern: null, passedPlayerIds: [] },
         tradeState: null,
     };

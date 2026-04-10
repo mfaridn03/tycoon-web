@@ -31,6 +31,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: false,
         trick: emptyTrick(),
         tradeState: null,
         ...overrides,
@@ -193,6 +194,37 @@ describe("getLegalPlays", () => {
 
         expect(plays).toHaveLength(2);
         expect(plays.every((play) => play.some((card) => card.rank === "3" && card.suit === "D"))).toBe(true);
+    });
+
+    it("does not require 3D on empty trick after round-1 opening lead (e.g. new trick same round)", () => {
+        const s = makeState({
+            roundOneOpeningLeadSatisfied: true,
+            trick: emptyTrick(),
+            hands: [
+                [new Card("3", "D"), new Card("9", "H"), new Card("K", "C")],
+                [new Card("7", "D")],
+                [new Card("A", "D")],
+                [new Card("2", "C")],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+        expect(plays.some((p) => p.length === 1 && p[0]!.rank === "9")).toBe(true);
+    });
+
+    it("does not require 3D for round 2+ opening lead when holder still has 3D", () => {
+        const s = makeState({
+            roundNumber: 2,
+            roundOneOpeningLeadSatisfied: true,
+            trick: emptyTrick(),
+            hands: [
+                [new Card("3", "D"), new Card("9", "H"), new Card("K", "C")],
+                [new Card("7", "D")],
+                [new Card("A", "D")],
+                [new Card("2", "C")],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+        expect(plays.some((p) => p.length === 1 && p[0]!.rank === "9")).toBe(true);
     });
 
     it("only returns plays matching current trick pattern", () => {

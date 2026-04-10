@@ -22,6 +22,8 @@ function openingLeadMustIncludeThreeOfDiamonds(
     playerId: PlayerId,
 ): boolean {
     return (
+        state.roundNumber === 1 &&
+        !state.roundOneOpeningLeadSatisfied &&
         state.trick.topPlay === null &&
         state.hands[playerId].some(isThreeOfDiamonds)
     );

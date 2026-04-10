@@ -199,6 +199,11 @@ export interface GameState {
     finishedPlayers: PlayerId[];
     /** Previous-round Tycoon forced to last place mid-round (cannot play until next round). */
     demotedTycoonId: PlayerId | null;
+    /**
+     * After first card play of round 1, opening-lead must include 3♦ rule no longer applies.
+     * (Empty trick alone is not enough — that also happens at the start of every new trick.)
+     */
+    roundOneOpeningLeadSatisfied: boolean;
 
     // Trick level
     trick: TrickState;

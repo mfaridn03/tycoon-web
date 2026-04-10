@@ -40,6 +40,7 @@ export function createInitialGameState(): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: false,
         trick: emptyTrick(),
         tradeState: null,
     };
@@ -78,6 +79,7 @@ export function dealRound(state: GameState, shuffleFn: ShuffleFn): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: state.roundOneOpeningLeadSatisfied,
         revolutionActive: false,
         trick: emptyTrick(),
     };
@@ -251,6 +253,8 @@ function applyMoveInternal(
         hands,
         trick,
         revolutionActive,
+        roundOneOpeningLeadSatisfied:
+            state.roundOneOpeningLeadSatisfied || state.roundNumber === 1,
     };
 
     // Player finished?
