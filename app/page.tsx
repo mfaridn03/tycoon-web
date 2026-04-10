@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { CardDemo } from "@/components/CardDemo";
+import { GameTablePrototype } from "@/components/GameTablePrototype";
 
 export const metadata: Metadata = {
-  title: "Card Demo",
-  description: "SVG playing card renderer",
+  title: "Table prototype",
+  description: "Rough mobile card-table UI prototype",
 };
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <CardDemo />
+    <div className="flex min-h-dvh items-center justify-center bg-zinc-950">
+      <GameTablePrototype />
     </div>
   );
 }

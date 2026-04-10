@@ -1,14 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type RefObject,
+} from "react";
 import { createDeck } from "@/lib/game/constants";
-import type { Card, Rank, Suit } from "@/lib/game/types";
-import { DEFAULT_RANK_ORDER, DEFAULT_RANK_SEQUENCE } from "@/lib/game/types";
+import { shuffleDeck } from "@/lib/game/shuffle-deck";
+import { sortPlayerHand } from "@/lib/game/sort-player-hand";
+import type { Card, Rank } from "@/lib/game/types";
+import { DEFAULT_RANK_SEQUENCE } from "@/lib/game/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
 
-const SUIT_ORDER: Record<Suit, number> = { D: 0, C: 1, H: 2, S: 3 };
 const HAND_SIZE = 13;
 const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
@@ -22,24 +29,6 @@ const CARD_OVERLAP = 16; // pixels hidden by the next card
 const INTERACTIVE_SELECTOR = "[data-card-demo-interactive='true']";
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
-
-function shuffleDeck(deck: Card[]): Card[] {
-  const arr = [...deck];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-function sortCards(cards: Card[]): Card[] {
-  return [...cards].sort((a, b) => {
-    // Sort by rank first (matches game/CLI), then suit as deterministic tie-break.
-    const rankDiff = DEFAULT_RANK_ORDER[a.rank] - DEFAULT_RANK_ORDER[b.rank];
-    if (rankDiff !== 0) return rankDiff;
-    return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
-  });
-}
 
 /** Lexicographic k-combinations of indices (indices sorted ascending). */
 function combinations(indices: number[], k: number): number[][] {
@@ -101,7 +90,23 @@ const INITIAL_CURSORS: Record<ChoiceKey, number> = {
   revolution: 0,
 };
 
-export function CardDemo() {
+export type CardDemoProps = {
+  variant?: "standalone" | "embedded";
+  /** When set, fly animation measures from this stack (parent renders the stack). */
+  externalStackRef?: RefObject<HTMLDivElement | null>;
+  /** Pre-dealt player hand; embedded mount starts deal when length is 13. */
+  playerCards?: Card[] | null;
+  className?: string;
+  onDealComplete?: () => void;
+};
+
+export function CardDemo({
+  variant = "standalone",
+  externalStackRef,
+  playerCards,
+  className,
+  onDealComplete,
+}: CardDemoProps) {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
@@ -121,7 +126,8 @@ export function CardDemo() {
     [],
   );
 
-  const stackRef = useRef<HTMLDivElement>(null);
+  const internalStackRef = useRef<HTMLDivElement>(null);
+  const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -132,7 +138,7 @@ export function CardDemo() {
     [],
   );
 
-  function drawDeck() {
+  function beginDealWithCards(cards: Card[]) {
     if (dealPhase !== "idle" && dealPhase !== "done") return;
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
@@ -142,13 +148,25 @@ export function CardDemo() {
     setChoiceCursors(INITIAL_CURSORS);
     lastChoiceKeyRef.current = null;
 
-    const deck = shuffleDeck(createDeck());
-    const cards = sortCards(deck.slice(0, HAND_SIZE));
-    setDrawnCards(cards);
-    setChoiceSequences(buildChoiceSequences(cards));
+    const sorted = sortPlayerHand(cards);
+    setDrawnCards(sorted);
+    setChoiceSequences(buildChoiceSequences(sorted));
     setDrawId((n) => n + 1);
     setDealPhase("measuring");
   }
+
+  function drawDeck() {
+    const deck = shuffleDeck(createDeck());
+    beginDealWithCards(deck.slice(0, HAND_SIZE));
+  }
+
+  useLayoutEffect(() => {
+    if (variant !== "embedded") return;
+    if (!playerCards || playerCards.length !== HAND_SIZE) return;
+    beginDealWithCards(playerCards);
+    // Intentionally run when variant/playerCards change (parent remount + stable hand).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- beginDealWithCards closes over fresh deal state
+  }, [variant, playerCards]);
 
   function pickNextChoice(key: ChoiceKey) {
     const list = choiceSequences[key];
@@ -200,7 +218,7 @@ export function CardDemo() {
     setFlyOffsets(offsets);
 
     setDealPhase("atStack");
-  }, [dealPhase, drawnCards]);
+  }, [dealPhase, drawnCards, stackRef]);
 
   // atStack → double-rAF (guarantees a paint) → flying
   useEffect(() => {
@@ -236,6 +254,17 @@ export function CardDemo() {
     timersRef.current.push(t);
     return () => clearTimeout(t);
   }, [dealPhase]);
+
+  const notifiedDealDoneRef = useRef(false);
+  useEffect(() => {
+    if (dealPhase !== "done") {
+      notifiedDealDoneRef.current = false;
+      return;
+    }
+    if (notifiedDealDoneRef.current) return;
+    notifiedDealDoneRef.current = true;
+    onDealComplete?.();
+  }, [dealPhase, onDealComplete]);
 
   function toggleSelection(index: number) {
     if (dealPhase !== "done") return;
@@ -300,9 +329,20 @@ export function CardDemo() {
   const { single: singleChoices, pair: pairChoices, triple: tripleChoices, revolution: revolutionChoices } =
     choiceSequences;
 
+  const showOwnStack = variant === "standalone" || !externalStackRef;
+  const rootClass =
+    variant === "embedded"
+      ? className ?? "flex flex-col items-center gap-4 w-full px-1 pb-2"
+      : [
+          "flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
   return (
     <div
-      className="flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen"
+      className={rootClass}
       onClick={(event) => {
         const target = event.target as HTMLElement | null;
         if (!target?.closest(INTERACTIVE_SELECTOR)) {
@@ -310,48 +350,54 @@ export function CardDemo() {
         }
       }}
     >
-      <h1 className="text-white text-2xl font-semibold tracking-tight">
-        Card Renderer
-      </h1>
+      {variant === "standalone" && (
+        <h1 className="text-white text-2xl font-semibold tracking-tight">
+          Card Renderer
+        </h1>
+      )}
 
-      <button
-        onClick={drawDeck}
-        disabled={isAnimating}
-        data-card-demo-interactive="true"
-        className="px-6 py-2.5 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed z-10 relative"
-      >
-        Draw Deck
-      </button>
+      {variant === "standalone" && (
+        <button
+          onClick={drawDeck}
+          disabled={isAnimating}
+          data-card-demo-interactive="true"
+          className="px-6 py-2.5 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed z-10 relative"
+        >
+          Draw Deck
+        </button>
+      )}
 
-      {/* Center Stack */}
-      <div
-        className="relative w-full flex items-center justify-center"
-        style={{ height: CARD_H + 24 }}
-      >
+      {/* Center Stack — standalone only; embedded uses parent stack via externalStackRef */}
+      {showOwnStack && (
         <div
-          ref={stackRef}
-          className={`relative transition-transform duration-300 ${
-            isAnimating ? "scale-95" : "scale-100"
-          }`}
-          style={{ width: CARD_W, height: CARD_H }}
+          className="relative w-full flex items-center justify-center"
+          style={{ height: CARD_H + 24 }}
         >
           <div
+            ref={internalStackRef}
+            className={`relative transition-transform duration-300 ${
+              isAnimating ? "scale-95" : "scale-100"
+            }`}
             style={{ width: CARD_W, height: CARD_H }}
-            className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
           >
-            <CardBack />
-          </div>
-          <div
-            style={{ width: CARD_W, height: CARD_H }}
-            className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
-          >
-            <CardBack />
-          </div>
-          <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
-            <CardBack />
+            <div
+              style={{ width: CARD_W, height: CARD_H }}
+              className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
+            >
+              <CardBack />
+            </div>
+            <div
+              style={{ width: CARD_W, height: CARD_H }}
+              className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
+            >
+              <CardBack />
+            </div>
+            <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
+              <CardBack />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Pattern pickers — lowest-first sequences per click (below deck) */}
       {canUseChoices && (
@@ -416,11 +462,13 @@ export function CardDemo() {
         className="flex items-end justify-center"
         style={{ minHeight: CARD_H + 20 }}
       >
-        {drawnCards.length === 0 && dealPhase === "idle" && (
-          <p className="text-zinc-600 text-sm">
-            Click &apos;Draw Deck&apos; to start
-          </p>
-        )}
+        {variant === "standalone" &&
+          drawnCards.length === 0 &&
+          dealPhase === "idle" && (
+            <p className="text-zinc-600 text-sm">
+              Click &apos;Draw Deck&apos; to start
+            </p>
+          )}
         {drawnCards.map((card, i) => {
           const isSelected = selectedIndices.has(i);
           return (
