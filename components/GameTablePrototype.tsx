@@ -62,6 +62,23 @@ const CENTER_ZONE_H = Math.round(PLAY_CARD_H * 1.6);
 
 const HUMAN_ID = 0 as PlayerId;
 
+const TABLE_PLAYER_NAMES: Record<PlayerId, string> = {
+  0: "You",
+  1: "Bot A",
+  2: "Bot B",
+  3: "Bot C",
+};
+
+function playersByScoreDesc(
+  scores: [number, number, number, number],
+): PlayerId[] {
+  return ([0, 1, 2, 3] as PlayerId[]).sort((a, b) => {
+    const d = scores[b] - scores[a];
+    if (d !== 0) return d;
+    return a - b;
+  });
+}
+
 // Fly-in origin per player: card slides from their table edge to center
 const PLAY_ORIGINS: Record<number, string> = {
   0: "translateY(60px)",   // human — bottom
@@ -147,6 +164,7 @@ function BotHandStrip({
   stackRef,
   cards,
   botName,
+  rankSuffix,
   rotationDeg,
   showPass,
   className,
@@ -154,6 +172,8 @@ function BotHandStrip({
   stackRef: RefObject<HTMLDivElement | null>;
   cards: Card[];
   botName: string;
+  /** Lowercase rank from previous round, e.g. "tycoon" — shown as "Bot A (tycoon)". */
+  rankSuffix?: string | null;
   rotationDeg: number;
   showPass: boolean;
   className?: string;
@@ -323,6 +343,7 @@ function BotHandStrip({
               style={{ color: isFlashing ? "#f87171" : "#d1fae5", transition: "color 200ms ease" }}
             >
               {botName}
+              {rankSuffix ? ` (${rankSuffix})` : ""}
             </div>
             <div
               className="text-[11px] leading-none"
@@ -1101,6 +1122,10 @@ export function GameTablePrototype() {
   const hands = gameState?.hands ?? null;
   const [, botLeft, botTop, botRight] = hands ?? [[], [], [], []];
 
+  const prevRanks = gameState?.previousRanks;
+  const rankSuffix = (id: PlayerId) =>
+    prevRanks?.[id]?.toLowerCase() ?? null;
+
   const playMode =
     tablePhase === "playing" &&
     gameState?.phase === RoundPhase.Play &&
@@ -1155,6 +1180,24 @@ export function GameTablePrototype() {
         />
 
         <div className="relative flex min-h-dvh flex-col px-2 pb-6 pt-3">
+          {showTable && gameState && (
+            <div className="pointer-events-none absolute left-2 top-2 z-20 flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/95">
+                Scores
+              </p>
+              <ul className="flex flex-col gap-0.5 text-xs text-emerald-50">
+                {playersByScoreDesc(gameState.scores).map((id) => (
+                  <li key={id} className="tabular-nums">
+                    <span className="font-medium text-emerald-100">
+                      {TABLE_PLAYER_NAMES[id]}
+                    </span>
+                    <span className="text-emerald-200/85"> {gameState.scores[id]}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Top bot */}
           {showTable && hands && (
             <div className="flex shrink-0 justify-center pt-3 pb-1">
@@ -1163,6 +1206,7 @@ export function GameTablePrototype() {
                 stackRef={stackRef}
                 cards={botTop}
                 botName="Bot B"
+                rankSuffix={rankSuffix(2 as PlayerId)}
                 rotationDeg={180}
                 showPass={visiblePassers.has(2 as PlayerId)}
                 className=""
@@ -1177,6 +1221,7 @@ export function GameTablePrototype() {
                 stackRef={stackRef}
                 cards={botLeft}
                 botName="Bot A"
+                rankSuffix={rankSuffix(1 as PlayerId)}
                 rotationDeg={90}
                 showPass={visiblePassers.has(1 as PlayerId)}
                 className="justify-self-start pl-1"
@@ -1223,6 +1268,7 @@ export function GameTablePrototype() {
                 stackRef={stackRef}
                 cards={botRight}
                 botName="Bot C"
+                rankSuffix={rankSuffix(3 as PlayerId)}
                 rotationDeg={-90}
                 showPass={visiblePassers.has(3 as PlayerId)}
                 className="justify-self-end pr-1"
@@ -1243,6 +1289,7 @@ export function GameTablePrototype() {
                 gameHandSync={tablePhase === "playing" || tablePhase === "trading"}
                 playMode={playMode}
                 tradeMode={tradeMode}
+                playerRankLabel={rankSuffix(HUMAN_ID)}
                 className="flex w-full flex-col items-center gap-3"
               />
             </div>
@@ -1276,9 +1323,6 @@ export function GameTablePrototype() {
                 <p className="text-base font-medium text-yellow-300">
                   {playerLabel(getMatchWinner(gameState.scores))} wins!
                 </p>
-                <p className="text-sm leading-relaxed text-emerald-100/90">
-                  {formatScores(gameState.scores)}
-                </p>
                 <button
                   type="button"
                   onClick={() => { resetGame(); startGame(); }}
@@ -1299,9 +1343,6 @@ export function GameTablePrototype() {
                 <h2 className="text-lg font-semibold text-emerald-50">
                   Round {gameState.roundNumber - 1} complete
                 </h2>
-                <p className="text-sm leading-relaxed text-emerald-100/90">
-                  {formatScores(gameState.scores)}
-                </p>
                 <div className="flex gap-3">
                   <button
                     type="button"

@@ -62,6 +62,8 @@ export type CardDemoProps = {
   playMode?: CardDemoPlayMode | null;
   /** Trade phase: pick exactly N cards then confirm. */
   tradeMode?: CardDemoTradeMode | null;
+  /** Shown in embedded mode between the play/trade bar and the hand (e.g. previous-round rank). */
+  playerRankLabel?: string | null;
 };
 
 export function CardDemo({
@@ -74,6 +76,7 @@ export function CardDemo({
   gameHandSync = false,
   playMode = null,
   tradeMode = null,
+  playerRankLabel = null,
 }: CardDemoProps) {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
@@ -513,6 +516,12 @@ export function CardDemo({
           )}
         </div>
       )}
+
+      {variant === "embedded" && playerRankLabel ? (
+        <p className="text-center text-sm font-medium tracking-wide text-emerald-200/95">
+          ({playerRankLabel})
+        </p>
+      ) : null}
 
       {/* Hand */}
       <div
