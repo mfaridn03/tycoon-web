@@ -18,7 +18,7 @@ const FLIP_STAGGER = 40;
 // Card dimensions — SVG viewBox is 80×112, keep the same aspect ratio
 const CARD_W = 96;
 const CARD_H = Math.round(CARD_W * (112 / 80)); // 134
-const CARD_OVERLAP = 32; // pixels hidden by the next card
+const CARD_OVERLAP = 16; // pixels hidden by the next card
 
 type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
 
@@ -159,7 +159,7 @@ export function CardDemo() {
       case "done":
         return {
           transform: selectedIndices.has(index)
-            ? "translateY(-10px)"
+            ? "translateY(-20px)"
             : "translate(0, 0)",
           transition: "transform 150ms ease",
           opacity: 1,
@@ -223,11 +223,6 @@ export function CardDemo() {
           <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
             <CardBack />
           </div>
-          <div className="absolute -bottom-7 left-0 right-0 text-center">
-            <span className="text-zinc-500 text-xs font-medium">
-              {drawnCards.length > 0 ? `${52 - HAND_SIZE} cards` : "52 cards"}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -255,7 +250,7 @@ export function CardDemo() {
                 width: CARD_W,
                 height: CARD_H,
                 marginLeft: i === 0 ? 0 : -CARD_OVERLAP,
-                zIndex: isSelected ? 20 : i,
+                zIndex: i,
                 ...getSlotStyle(i),
               }}
               title={
@@ -324,9 +319,10 @@ export function CardDemo() {
                           position: "absolute",
                           inset: 0,
                           borderRadius: 6,
-                          outline: "2px solid white",
-                          outlineOffset: 1,
+                          outline: "6px solid rgb(255, 255, 0)",
+                          outlineOffset: 0,
                           pointerEvents: "none",
+                          opacity: 0.45
                         }}
                       />
                     )}

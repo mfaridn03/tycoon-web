@@ -18,8 +18,8 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
     <g>
       <text
         x="5"
-        y="14"
-        fontSize="11"
+        y="16"
+        fontSize="16"
         fontWeight="700"
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
@@ -29,8 +29,8 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
       </text>
       <text
         x="5"
-        y="24"
-        fontSize="10"
+        y="30"
+        fontSize="16"
         fontWeight="700"
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
@@ -70,7 +70,7 @@ export function CardFaceContent({ rank, suit }: { rank: Rank; suit: Suit }) {
         y="58"
         textAnchor="middle"
         dominantBaseline="middle"
-        fontSize={isFace ? "28" : "34"}
+        fontSize={isFace ? "30" : "36"}
         fontWeight="700"
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
