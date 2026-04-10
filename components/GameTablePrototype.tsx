@@ -85,17 +85,21 @@ function CenterStack({
 function BotHandStrip({
   stackRef,
   cards,
+  botName,
   rotationDeg,
   className,
 }: {
   stackRef: RefObject<HTMLDivElement | null>;
   cards: Card[];
+  botName: string;
   rotationDeg: number;
   className?: string;
 }) {
   const [dealPhase, setDealPhase] = useState<BotDealPhase>(() =>
     cards.length === HAND_SIZE ? "measuring" : "idle",
   );
+  const labelShiftX =
+    rotationDeg === 90 ? 20 : rotationDeg === -90 ? -20 : 0;
   const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>([]);
   const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -192,31 +196,52 @@ function BotHandStrip({
         transformOrigin: "center center",
       }}
     >
-      <div
-        className={`flex items-center justify-center pointer-events-none ${
-          isAnimating ? "opacity-95" : "opacity-100"
-        }`}
-        style={{ minHeight: BOT_CARD_H + 8 }}
-      >
-        {cards.map((_, i) => (
-          <div
-            key={i}
-            ref={(el) => {
-              slotRefs.current[i] = el;
-            }}
-            style={{
-              width: BOT_CARD_W,
-              height: BOT_CARD_H,
-              marginLeft: i === 0 ? 0 : -BOT_OVERLAP,
-              zIndex: i,
-              ...slotStyle(i),
-            }}
-          >
-            <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
-              <CardBack />
+      <div className="flex flex-col items-center pointer-events-none">
+        <div
+          style={{
+            transform: `rotate(${-rotationDeg}deg)`,
+            transformOrigin: "center center",
+            width: BOT_CARD_W ,
+            whiteSpace: "nowrap"
+          }}
+          className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
+        >
+          <div style={{ transform: `translateX(${labelShiftX}px)` }}>
+            <div className="text-xs font-semibold leading-none text-emerald-100">
+              {botName}
+            </div>
+            <div className="text-[11px] leading-none text-emerald-200/80">
+              {cards.length} cards
             </div>
           </div>
-        ))}
+        </div>
+
+        <div
+          className={`flex items-center justify-center ${
+            isAnimating ? "opacity-95" : "opacity-100"
+          }`}
+          style={{ minHeight: BOT_CARD_H + 8 }}
+        >
+          {cards.map((_, i) => (
+            <div
+              key={i}
+              ref={(el) => {
+                slotRefs.current[i] = el;
+              }}
+              style={{
+                width: BOT_CARD_W,
+                height: BOT_CARD_H,
+                marginLeft: i === 0 ? 0 : -BOT_OVERLAP,
+                zIndex: i,
+                ...slotStyle(i),
+              }}
+            >
+              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+                <CardBack />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -288,6 +313,7 @@ export function GameTablePrototype() {
                 key={`bot-top-${dealId}`}
                 stackRef={stackRef}
                 cards={botTop}
+                botName="Bot Top"
                 rotationDeg={180}
                 className=""
               />
@@ -300,6 +326,7 @@ export function GameTablePrototype() {
                 key={`bot-left-${dealId}`}
                 stackRef={stackRef}
                 cards={botLeft}
+                botName="Bot Left"
                 rotationDeg={90}
                 className="justify-self-start pl-1"
               />
@@ -317,6 +344,7 @@ export function GameTablePrototype() {
                 key={`bot-right-${dealId}`}
                 stackRef={stackRef}
                 cards={botRight}
+                botName="Bot Right"
                 rotationDeg={-90}
                 className="justify-self-end pr-1"
               />
