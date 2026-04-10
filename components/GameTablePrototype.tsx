@@ -969,6 +969,7 @@ export function GameTablePrototype() {
         eightStopClearTimerRef.current = null;
         queueMicrotask(() => {
           setCenterCurrent(null);
+          setCenterPrev(null);
           setVisiblePassers(new Set());
         });
       }, 1500);
