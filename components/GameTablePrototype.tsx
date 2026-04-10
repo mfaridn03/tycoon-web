@@ -39,13 +39,18 @@ const PLAY_ZONE_OFFSETS: Record<number, [number, number]> = {
 const BOT_CARD_W = 32;
 const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
 const BOT_OVERLAP = 24;
-
 const HAND_SIZE = 13;
+const BOT_STRIP_STEP = BOT_CARD_W - BOT_OVERLAP;
+const BOT_STRIP_W = BOT_CARD_W + (HAND_SIZE - 1) * BOT_STRIP_STEP;
 const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const STACK_DEPTH = HAND_SIZE;
 const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
 const PLAY_FLY_DURATION = 280;
+const CENTER_ZONE_MAX_CARDS = 4;
+const CENTER_ZONE_W =
+  PLAY_CARD_W * CENTER_ZONE_MAX_CARDS + 4 * (CENTER_ZONE_MAX_CARDS - 1);
+const CENTER_ZONE_H = Math.round(PLAY_CARD_H * 1.6);
 
 const HUMAN_ID = 0 as PlayerId;
 
@@ -253,8 +258,8 @@ function BotHandStrip({
           style={{
             transform: `rotate(${-rotationDeg}deg)`,
             transformOrigin: "center center",
-            width: BOT_CARD_W ,
-            whiteSpace: "nowrap"
+            width: BOT_STRIP_W,
+            whiteSpace: "nowrap",
           }}
           className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
         >
@@ -274,10 +279,10 @@ function BotHandStrip({
         </div>
 
         <div
-          className={`flex items-center justify-center ${
+          className={`relative ${
             isAnimating ? "opacity-95" : "opacity-100"
           }`}
-          style={{ minHeight: BOT_CARD_H + 8 }}
+          style={{ width: BOT_STRIP_W, minHeight: BOT_CARD_H + 8 }}
         >
           {cards.map((_, i) => (
             <div
@@ -288,7 +293,9 @@ function BotHandStrip({
               style={{
                 width: BOT_CARD_W,
                 height: BOT_CARD_H,
-                marginLeft: i === 0 ? 0 : -BOT_OVERLAP,
+                position: "absolute",
+                left: i * BOT_STRIP_STEP,
+                top: 0,
                 zIndex: i,
                 ...slotStyle(i),
               }}
@@ -394,7 +401,16 @@ function PlayerPlayZone({
   if (!showCurrent && !showPrev) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       {showPrev && (
         <div
           style={{
@@ -443,6 +459,8 @@ function AllPlayZones({
             key={pid}
             style={{
               position: "absolute",
+              width: CENTER_ZONE_W,
+              height: CENTER_ZONE_H,
               left: `calc(50% + ${dx}px)`,
               top: `calc(50% + ${dy}px)`,
               transform: "translate(-50%, -50%)",
@@ -608,23 +626,29 @@ export function GameTablePrototype() {
         playerId: curr.topPlayerId!,
         animKey: ++animKeyRef.current,
       };
-      setCenterPrev(
-        centerCurrentRef.current
-          ? { cards: centerCurrentRef.current.cards, playerId: centerCurrentRef.current.playerId }
-          : null,
-      );
+      const prevEntry = centerCurrentRef.current
+        ? {
+            cards: centerCurrentRef.current.cards,
+            playerId: centerCurrentRef.current.playerId,
+          }
+        : null;
       centerCurrentRef.current = newEntry;
-      setCenterCurrent(newEntry);
+      queueMicrotask(() => {
+        setCenterPrev(prevEntry);
+        setCenterCurrent(newEntry);
+      });
     }
 
     // Trick ended — clear the table
     if (curr.topPlay === null && prev.topPlay !== null) {
       centerCurrentRef.current = null;
-      setCenterCurrent(null);
-      setCenterPrev(null);
-      setVisiblePassers(new Set());
       passTimersRef.current.forEach(clearTimeout);
       passTimersRef.current.clear();
+      queueMicrotask(() => {
+        setCenterCurrent(null);
+        setCenterPrev(null);
+        setVisiblePassers(new Set());
+      });
     }
 
     // New passers since last state
@@ -633,7 +657,9 @@ export function GameTablePrototype() {
     for (const pid of newPassers) {
       const existing = passTimersRef.current.get(pid);
       if (existing) clearTimeout(existing);
-      setVisiblePassers((s) => new Set([...s, pid]));
+      queueMicrotask(() => {
+        setVisiblePassers((s) => new Set([...s, pid]));
+      });
       const t = setTimeout(() => {
         setVisiblePassers((s) => {
           const next = new Set(s);
