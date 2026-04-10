@@ -117,10 +117,12 @@ export function CardDemo() {
     useState<Record<ChoiceKey, number>>(INITIAL_CURSORS);
   const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
   const [drawId, setDrawId] = useState(0);
+  const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>(
+    [],
+  );
 
   const stackRef = useRef<HTMLDivElement>(null);
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const flyOffsetsRef = useRef<{ x: number; y: number }[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(
@@ -135,6 +137,7 @@ export function CardDemo() {
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
     cardSlotsRef.current = [];
+    setFlyOffsets([]);
     setSelectedIndices(new Set());
     setChoiceCursors(INITIAL_CURSORS);
     lastChoiceKeyRef.current = null;
@@ -186,7 +189,7 @@ export function CardDemo() {
     const scx = sr.left + sr.width / 2;
     const scy = sr.top + sr.height / 2;
 
-    flyOffsetsRef.current = cardSlotsRef.current.map((el) => {
+    const offsets = cardSlotsRef.current.map((el) => {
       if (!el) return { x: 0, y: 0 };
       const r = el.getBoundingClientRect();
       return {
@@ -194,6 +197,7 @@ export function CardDemo() {
         y: scy - (r.top + r.height / 2),
       };
     });
+    setFlyOffsets(offsets);
 
     setDealPhase("atStack");
   }, [dealPhase, drawnCards]);
@@ -250,7 +254,7 @@ export function CardDemo() {
   }
 
   function getSlotStyle(index: number): React.CSSProperties {
-    const offset = flyOffsetsRef.current[index] ?? { x: 0, y: 0 };
+    const offset = flyOffsets[index] ?? { x: 0, y: 0 };
 
     switch (dealPhase) {
       case "measuring":
@@ -350,7 +354,7 @@ export function CardDemo() {
       </div>
 
       {/* Pattern pickers — lowest-first sequences per click (below deck) */}
-      {drawnCards.length > 0 && (
+      {canUseChoices && (
         <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
           {singleChoices.length > 0 && (
             <button
