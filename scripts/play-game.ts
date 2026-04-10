@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { chooseBotPlay } from "../lib/game/bots";
 import { createInitialGameState, dispatch } from "../lib/game/engine";
 import { getLegalPlays } from "../lib/game/validation";
 import { getRankOrder, TOTAL_ROUNDS } from "../lib/game/constants";
@@ -25,6 +26,7 @@ import {
 import {
     buildPlayOptions,
     canPass,
+    formatCard,
     formatCards,
     formatEvent,
     formatHandSizes,
@@ -36,6 +38,9 @@ import {
     sortCards,
     type TrickHistoryEntry,
 } from "../lib/game/cli-helpers";
+
+/** Human sits at seat 0; B/C/D are bots. */
+const HUMAN_PLAYER_ID = 0 as PlayerId;
 
 const rl = readline.createInterface({ input, output });
 const isInteractiveCli = Boolean(input.isTTY && output.isTTY);
@@ -223,6 +228,45 @@ function renderPlayScreen(
     return { options, passAllowed };
 }
 
+async function promptTradeCardPick(
+    hand: Card[],
+    count: number,
+): Promise<Card[]> {
+    const rankOrder = getRankOrder(false);
+    const sorted = sortCards(hand, rankOrder);
+    for (let i = 0; i < sorted.length; i++) {
+        console.log(`  ${i + 1}) ${formatCard(sorted[i]!)}`);
+    }
+    while (true) {
+        const raw = await rl.question(
+            `Pick ${count} distinct number(s) (space-separated): `,
+        );
+        const parts = raw
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((x) => Number(x.trim()));
+        if (
+            parts.length !== count ||
+            parts.some(
+                (p) =>
+                    !Number.isInteger(p) || p < 1 || p > sorted.length,
+            )
+        ) {
+            console.log(
+                `Enter exactly ${count} integers from 1 to ${sorted.length}.`,
+            );
+            continue;
+        }
+        const idxs = parts.map((p) => p - 1);
+        if (new Set(idxs).size !== idxs.length) {
+            console.log("Indices must be distinct.");
+            continue;
+        }
+        return idxs.map((i) => sorted[i]!);
+    }
+}
+
 async function promptNumber(prompt: string, min: number, max: number): Promise<number> {
     while (true) {
         const raw = await rl.question(prompt);
@@ -263,30 +307,35 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
         );
 
         const receiverHand = s.hands[req.receiverId];
-        const rankOrder = getRankOrder(s.revolutionActive);
+        const rankOrder = getRankOrder(false);
         const sorted = sortCards(receiverHand, rankOrder);
 
         console.log(
             `${playerLabel(req.receiverId)}'s hand: ${formatCards(sorted)}`,
         );
 
-        const autoCards = selectLowestCards(
-            receiverHand,
-            req.count,
-            s.revolutionActive,
-        );
-        console.log(
-            `Auto-selecting lowest ${req.count} card(s): ${formatCards(autoCards)}`,
-        );
+        let tradeCards: Card[];
+        if (req.receiverId === HUMAN_PLAYER_ID) {
+            tradeCards = await promptTradeCardPick(receiverHand, req.count);
+        } else {
+            tradeCards = selectLowestCards(
+                receiverHand,
+                req.count,
+                false,
+            );
+            console.log(
+                `Bot gives lowest ${req.count} card(s): ${formatCards(tradeCards)}`,
+            );
+        }
 
         const action: GameAction = {
             type: "completeTrade",
             playerId: req.receiverId,
-            cards: autoCards,
+            cards: tradeCards,
         };
         completedRequirements[i] = {
             ...completedRequirements[i],
-            receiverCards: [...autoCards],
+            receiverCards: [...tradeCards],
         };
         const r = dispatch(s, action);
 
@@ -317,6 +366,47 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
     while (s.phase === RoundPhase.Play && safety < 1000) {
         safety++;
         const pid = s.activePlayerId;
+
+        if (pid !== HUMAN_PLAYER_ID) {
+            const botChoice = chooseBotPlay(s, pid);
+            let historyEntry: TrickHistoryEntry;
+            let action: GameAction;
+            if (botChoice.type === "pass") {
+                historyEntry = { type: "pass", playerId: pid };
+                action = { type: "pass", playerId: pid };
+            } else {
+                historyEntry = {
+                    type: "play",
+                    playerId: pid,
+                    cards: botChoice.cards,
+                };
+                action = {
+                    type: "play",
+                    playerId: pid,
+                    cards: botChoice.cards,
+                };
+            }
+            const result = dispatch(s, action);
+            if (!result.ok) {
+                console.error(`Bot dispatch failed: ${result.reason}`);
+                break;
+            }
+            console.log(
+                formatTrickHistoryEntry(
+                    historyEntry,
+                    isCurrentTopHistoryEntry(result.state, historyEntry),
+                ),
+            );
+            logActionAndEvents(action, result.events);
+            trickHistory = [...trickHistory, historyEntry];
+            eventMessages = getEventMessages(result.events);
+            if (result.events.some((event) => event.type === "trickEnded")) {
+                trickHistory = [];
+            }
+            s = result.state;
+            continue;
+        }
+
         const { options, passAllowed } = renderPlayScreen(
             s,
             trickHistory,
