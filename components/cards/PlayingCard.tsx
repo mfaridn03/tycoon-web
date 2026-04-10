@@ -12,6 +12,12 @@ interface PlayingCardProps {
 }
 
 const FACE_RANKS = new Set<Rank>(["J", "Q", "K"]);
+const NON_SELECTABLE_STYLE = {
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  MozUserSelect: "none",
+  msUserSelect: "none",
+} as const;
 
 function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string }) {
   return (
@@ -24,6 +30,7 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
         dominantBaseline="auto"
+        style={NON_SELECTABLE_STYLE}
       >
         {rank}
       </text>
@@ -34,6 +41,7 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
         fontWeight="700"
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
+        style={NON_SELECTABLE_STYLE}
       >
         {SUIT_META[suit].symbol}
       </text>
@@ -74,6 +82,7 @@ export function CardFaceContent({ rank, suit }: { rank: Rank; suit: Suit }) {
         fontWeight="700"
         fill={hex}
         fontFamily="system-ui, -apple-system, sans-serif"
+        style={NON_SELECTABLE_STYLE}
       >
         {isFace ? `${rank}${symbol}` : symbol}
       </text>
@@ -97,6 +106,7 @@ export function PlayingCard({
 
   const wrapperClasses = [
     "inline-block",
+    "select-none",
     "transition-transform duration-150",
     disabled
       ? "opacity-50"
@@ -126,7 +136,7 @@ export function PlayingCard({
     >
       <svg
         viewBox="0 0 80 112"
-        style={{ display: "block", width: "100%", height: "100%" }}
+        style={{ display: "block", width: "100%", height: "100%", ...NON_SELECTABLE_STYLE }}
         xmlns="http://www.w3.org/2000/svg"
       >
         <CardFace rank={rank} suit={suit} />
