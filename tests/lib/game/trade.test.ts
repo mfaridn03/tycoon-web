@@ -37,6 +37,7 @@ function makeTradeState(): GameState {
         revolutionActive: false,
         finishOrder: [],
         finishedPlayers: [],
+        demotedTycoonId: null,
         trick: { topPlay: null, topPlayerId: null, currentPattern: null, passedPlayerIds: [] },
         tradeState: null,
     };

@@ -197,6 +197,8 @@ export interface GameState {
     revolutionActive: boolean;
     finishOrder: PlayerId[];
     finishedPlayers: PlayerId[];
+    /** Previous-round Tycoon forced to last place mid-round (cannot play until next round). */
+    demotedTycoonId: PlayerId | null;
 
     // Trick level
     trick: TrickState;
@@ -225,6 +227,7 @@ export type GameEvent =
     | { type: "revolution" }
     | { type: "counterRevolution" }
     | { type: "playerFinished"; playerId: PlayerId; position: number }
+    | { type: "tycoonDemoted"; playerId: PlayerId }
     | { type: "roundFinished"; ranks: Record<PlayerId, PlayerRank> }
     | { type: "matchFinished"; winner: PlayerId };
 

@@ -6,7 +6,7 @@ import {
     TOTAL_ROUNDS,
 } from "./constants";
 import { applyRoundScores, assignRoundRanks, getMatchWinner } from "./scoring";
-import { applyTrade, startTradePhase } from "./trade";
+import { applyTrade, findPlayerByRank, startTradePhase } from "./trade";
 import {
     type ActionResult,
     type Card,
@@ -17,6 +17,7 @@ import {
     PlayEffect,
     type PlayerId,
     type PlayPattern,
+    PlayerRank,
     RoundPhase,
     type ShuffleFn,
     type TrickState,
@@ -39,6 +40,7 @@ export function createInitialGameState(): GameState {
         revolutionActive: false,
         finishOrder: [],
         finishedPlayers: [],
+        demotedTycoonId: null,
         trick: emptyTrick(),
         tradeState: null,
     };
@@ -76,6 +78,7 @@ export function dealRound(state: GameState, shuffleFn: ShuffleFn): GameState {
         hands,
         finishOrder: [],
         finishedPlayers: [],
+        demotedTycoonId: null,
         revolutionActive: false,
         trick: emptyTrick(),
     };
@@ -170,8 +173,16 @@ function endTrick(
 // ---------------------------------------------------------------------------
 
 function endRound(state: GameState): { state: GameState; events: GameEvent[] } {
-    const ranks = assignRoundRanks(state.finishOrder);
-    let s = applyRoundScores({ ...state, phase: RoundPhase.Finished });
+    const effectiveFinishOrder =
+        state.demotedTycoonId != null
+            ? [...state.finishOrder, state.demotedTycoonId]
+            : state.finishOrder;
+    const ranks = assignRoundRanks(effectiveFinishOrder);
+    let s = applyRoundScores({
+        ...state,
+        finishOrder: effectiveFinishOrder,
+        phase: RoundPhase.Finished,
+    });
     const events: GameEvent[] = [{ type: "roundFinished", ranks }];
 
     if (s.roundNumber >= TOTAL_ROUNDS) {
@@ -251,7 +262,23 @@ function applyMoveInternal(
             playerId,
             position: finishOrder.length,
         });
-        s = { ...s, finishOrder, finishedPlayers };
+        let demotedTycoonId = state.demotedTycoonId;
+        if (
+            finishOrder.length === 1 &&
+            state.previousRanks &&
+            playerId !== findPlayerByRank(state.previousRanks, PlayerRank.Tycoon)
+        ) {
+            const tycoonId = findPlayerByRank(
+                state.previousRanks,
+                PlayerRank.Tycoon,
+            );
+            if (!finishedPlayers.includes(tycoonId)) {
+                finishedPlayers.push(tycoonId);
+                demotedTycoonId = tycoonId;
+                events.push({ type: "tycoonDemoted", playerId: tycoonId });
+            }
+        }
+        s = { ...s, finishOrder, finishedPlayers, demotedTycoonId };
     }
 
     // All players finished? End round.

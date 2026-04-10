@@ -30,6 +30,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
         revolutionActive: false,
         finishOrder: [],
         finishedPlayers: [],
+        demotedTycoonId: null,
         trick: emptyTrick(),
         tradeState: null,
         ...overrides,

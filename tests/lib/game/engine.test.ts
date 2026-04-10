@@ -45,6 +45,7 @@ describe("createInitialGameState", () => {
         expect(s.phase).toBe(RoundPhase.Deal);
         expect(s.scores).toEqual([0, 0, 0, 0]);
         expect(s.matchFinished).toBe(false);
+        expect(s.demotedTycoonId).toBeNull();
     });
 });
 
@@ -348,6 +349,96 @@ describe("player finishing", () => {
         expect(r.state.finishOrder).toContain(0);
         const finishEvent = r.events.find((e) => e.type === "playerFinished");
         expect(finishEvent).toBeDefined();
+    });
+});
+
+describe("tycoon demotion", () => {
+    it("demotes previous Tycoon when another player finishes first", () => {
+        const state: GameState = {
+            ...createInitialGameState(),
+            roundNumber: 2,
+            phase: RoundPhase.Play,
+            previousRanks: {
+                0: PlayerRank.Tycoon,
+                1: PlayerRank.Rich,
+                2: PlayerRank.Poor,
+                3: PlayerRank.Beggar,
+            },
+            hands: [
+                [new Card("3", "D"), new Card("K", "C")],
+                [new Card("8", "H")],
+                [new Card("5", "D")],
+                [new Card("6", "C")],
+            ],
+            activePlayerId: 1,
+            revolutionActive: false,
+            finishOrder: [],
+            finishedPlayers: [],
+            demotedTycoonId: null,
+            trick: {
+                topPlay: new Play([new Card("4", "D")]),
+                topPlayerId: 2,
+                currentPattern: PlayPattern.One,
+                passedPlayerIds: [],
+            },
+            tradeState: null,
+        };
+
+        const r = dispatch(state, {
+            type: "play",
+            playerId: 1,
+            cards: [new Card("8", "H")],
+        });
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+
+        expect(r.state.demotedTycoonId).toBe(0);
+        expect(r.state.finishedPlayers).toContain(0);
+        expect(r.state.finishedPlayers).toContain(1);
+        expect(r.events.some((e) => e.type === "tycoonDemoted")).toBe(true);
+    });
+
+    it("does not demote when incoming Tycoon finishes first", () => {
+        const state: GameState = {
+            ...createInitialGameState(),
+            roundNumber: 2,
+            phase: RoundPhase.Play,
+            previousRanks: {
+                0: PlayerRank.Tycoon,
+                1: PlayerRank.Rich,
+                2: PlayerRank.Poor,
+                3: PlayerRank.Beggar,
+            },
+            hands: [
+                [new Card("8", "H")],
+                [new Card("3", "D"), new Card("K", "C")],
+                [new Card("5", "D")],
+                [new Card("6", "C")],
+            ],
+            activePlayerId: 0,
+            revolutionActive: false,
+            finishOrder: [],
+            finishedPlayers: [],
+            demotedTycoonId: null,
+            trick: {
+                topPlay: new Play([new Card("4", "D")]),
+                topPlayerId: 2,
+                currentPattern: PlayPattern.One,
+                passedPlayerIds: [],
+            },
+            tradeState: null,
+        };
+
+        const r = dispatch(state, {
+            type: "play",
+            playerId: 0,
+            cards: [new Card("8", "H")],
+        });
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+
+        expect(r.state.demotedTycoonId).toBeNull();
+        expect(r.events.some((e) => e.type === "tycoonDemoted")).toBe(false);
     });
 });
 

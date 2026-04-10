@@ -27,6 +27,7 @@ function makeFinishedRoundState(
         revolutionActive: false,
         finishOrder,
         finishedPlayers: [...finishOrder],
+        demotedTycoonId: null,
         trick: { topPlay: null, topPlayerId: null, currentPattern: null, passedPlayerIds: [] },
         tradeState: null,
     };

@@ -24,7 +24,7 @@ function getHighestCards(
     return sorted.slice(0, count);
 }
 
-function findPlayerByRank(
+export function findPlayerByRank(
     ranks: Record<PlayerId, PlayerRank>,
     target: PlayerRank,
 ): PlayerId {

@@ -118,6 +118,8 @@ export function formatEvent(event: GameEvent): string | null {
             return "*** COUNTER-REVOLUTION! Rank order restored! ***";
         case "playerFinished":
             return `${playerLabel(event.playerId)} finished in position ${event.position}!`;
+        case "tycoonDemoted":
+            return `${playerLabel(event.playerId)} (incoming Tycoon) is last place this round — out until next round.`;
         case "roundFinished": {
             const lines = ["--- Round Finished ---"];
             for (const [id, rank] of Object.entries(event.ranks)) {
