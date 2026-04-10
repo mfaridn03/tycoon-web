@@ -3,6 +3,7 @@ export * from './core/constants';
 export * from './rules/validation';
 export * from './scoring/scoring';
 export * from './trade/trade';
+export * from './trade/helpers';
 export * from './engine/engine';
 export * from './bots/bots';
 export * from './cli/cli-helpers';

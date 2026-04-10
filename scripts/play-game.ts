@@ -34,10 +34,13 @@ import {
     formatTradeRequirement,
     formatTrickHistoryEntry,
     playerLabel,
-    selectLowestCards,
     sortCards,
     type TrickHistoryEntry,
 } from "../lib/game/cli-helpers";
+import {
+    buildBotTradeAction,
+    getNextPendingTrade,
+} from "../lib/game/trade/helpers";
 
 /** Human sits at seat 0; B/C/D are bots. */
 const HUMAN_PLAYER_ID = 0 as PlayerId;
@@ -291,11 +294,9 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
         receiverCards: requirement.receiverCards ? [...requirement.receiverCards] : null,
     }));
 
-    const numReqs = s.tradeState!.requirements.length;
-    for (let i = 0; i < numReqs; i++) {
-        if (!s.tradeState) break;
-        const req = s.tradeState.requirements[i];
-        if (s.tradeState.completed[i]) continue;
+    let pending = getNextPendingTrade(s);
+    while (pending) {
+        const { index, requirement: req } = pending;
 
         console.log(
             formatTradeRequirement(
@@ -314,38 +315,33 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
             `${playerLabel(req.receiverId)}'s hand: ${formatCards(sorted)}`,
         );
 
-        let tradeCards: Card[];
+        let action: GameAction;
         if (req.receiverId === HUMAN_PLAYER_ID) {
-            tradeCards = await promptTradeCardPick(receiverHand, req.count);
+            const tradeCards = await promptTradeCardPick(receiverHand, req.count);
+            action = { type: "completeTrade", playerId: req.receiverId, cards: tradeCards };
         } else {
-            tradeCards = selectLowestCards(
-                receiverHand,
-                req.count,
-                false,
-            );
+            action = buildBotTradeAction(s, pending);
+            const botCards = (action as { cards: Card[] }).cards;
             console.log(
-                `Bot gives lowest ${req.count} card(s): ${formatCards(tradeCards)}`,
+                `Bot gives lowest ${req.count} card(s): ${formatCards(botCards)}`,
             );
         }
 
-        const action: GameAction = {
-            type: "completeTrade",
-            playerId: req.receiverId,
-            cards: tradeCards,
-        };
-        completedRequirements[i] = {
-            ...completedRequirements[i],
-            receiverCards: [...tradeCards],
+        completedRequirements[index] = {
+            ...completedRequirements[index],
+            receiverCards: [...(action as { cards: Card[] }).cards],
         };
         const r = dispatch(s, action);
 
         if (!r.ok) {
             console.log(`Trade error: ${r.reason}`);
+            pending = getNextPendingTrade(s);
             continue;
         }
 
         printEvents(r.events);
         s = r.state;
+        pending = getNextPendingTrade(s);
     }
 
     console.log("Trades complete.\n");
