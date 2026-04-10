@@ -11,6 +11,7 @@ import {
     type GameAction,
     type GameEvent,
     type GameState,
+    type PlayerId,
     RoundPhase,
 } from "../lib/game/types";
 import {
@@ -32,30 +33,89 @@ const rl = readline.createInterface({ input, output });
 const isInteractiveCli = Boolean(input.isTTY && output.isTTY);
 
 const GAME_LOG_PATH =
-    process.env.TYCOON_GAME_LOG ?? path.join(process.cwd(), "game-history.log");
+    process.env.TYCOON_GAME_LOG ?? path.join(process.cwd(), "game-history.json");
+
+type SerializedCard = { rank: Card["rank"]; suit: Card["suit"] };
+
+type SerializedAction =
+    | { type: "startRound" }
+    | { type: "pass"; playerId: PlayerId }
+    | {
+          type: "play" | "completeTrade";
+          playerId: PlayerId;
+          cards: SerializedCard[];
+      };
+
+type SerializedLogEntry = {
+    recordedAt: string;
+    round: GameState["roundNumber"];
+    phase: GameState["phase"];
+    action: SerializedAction;
+    events: GameEvent[];
+    state: {
+        scores: GameState["scores"];
+        activePlayerId: GameState["activePlayerId"];
+        finishOrder: GameState["finishOrder"];
+        finishedPlayers: GameState["finishedPlayers"];
+        demotedTycoonId: GameState["demotedTycoonId"];
+        revolutionActive: GameState["revolutionActive"];
+        handSizes: number[];
+        trick: {
+            topPlayerId: GameState["trick"]["topPlayerId"];
+            currentPattern: GameState["trick"]["currentPattern"];
+            topPlayCards: SerializedCard[] | null;
+            passedPlayerIds: GameState["trick"]["passedPlayerIds"];
+        };
+    };
+};
+
+type GameLogDocument = {
+    type: "gameSession";
+    startedAt: string;
+    logPath: string;
+    entries: SerializedLogEntry[];
+};
+
+let gameLog: GameLogDocument | null = null;
 
 function initGameLogFile(): void {
-    const header = {
-        type: "sessionStart",
+    gameLog = {
+        type: "gameSession",
         startedAt: new Date().toISOString(),
         logPath: GAME_LOG_PATH,
+        entries: [],
     };
-    fs.writeFileSync(GAME_LOG_PATH, `${JSON.stringify(header)}\n`, "utf8");
+    flushGameLog();
 }
 
-function serializeAction(action: GameAction): Record<string, unknown> {
+function flushGameLog(): void {
+    if (!gameLog) {
+        throw new Error("Game log not initialized");
+    }
+
+    fs.writeFileSync(GAME_LOG_PATH, `${JSON.stringify(gameLog, null, 2)}\n`, "utf8");
+}
+
+function serializeCard(card: Card): SerializedCard {
+    return {
+        rank: card.rank,
+        suit: card.suit,
+    };
+}
+
+function serializeAction(action: GameAction): SerializedAction {
     switch (action.type) {
         case "play":
             return {
                 type: action.type,
                 playerId: action.playerId,
-                cards: formatCards(action.cards),
+                cards: action.cards.map(serializeCard),
             };
         case "completeTrade":
             return {
                 type: action.type,
                 playerId: action.playerId,
-                cards: formatCards(action.cards),
+                cards: action.cards.map(serializeCard),
             };
         case "pass":
             return { type: action.type, playerId: action.playerId };
@@ -64,24 +124,44 @@ function serializeAction(action: GameAction): Record<string, unknown> {
     }
 }
 
+function serializeState(state: GameState): SerializedLogEntry["state"] {
+    return {
+        scores: [...state.scores],
+        activePlayerId: state.activePlayerId,
+        finishOrder: [...state.finishOrder],
+        finishedPlayers: [...state.finishedPlayers],
+        demotedTycoonId: state.demotedTycoonId,
+        revolutionActive: state.revolutionActive,
+        handSizes: state.hands.map((hand) => hand.length),
+        trick: {
+            topPlayerId: state.trick.topPlayerId,
+            currentPattern: state.trick.currentPattern,
+            topPlayCards: state.trick.topPlay?.cards.map(serializeCard) ?? null,
+            passedPlayerIds: [...state.trick.passedPlayerIds],
+        },
+    };
+}
+
 function appendGameLog(
     state: GameState,
     action: GameAction,
     events: GameEvent[],
 ): void {
-    const line = {
-        at: new Date().toISOString(),
+    if (!gameLog) {
+        throw new Error("Game log not initialized");
+    }
+
+    const entry: SerializedLogEntry = {
+        recordedAt: new Date().toISOString(),
         round: state.roundNumber,
         phase: state.phase,
         action: serializeAction(action),
         events,
-        scores: [...state.scores],
-        activePlayerId: state.activePlayerId,
-        finishOrder: [...state.finishOrder],
-        demotedTycoonId: state.demotedTycoonId,
-        handSizes: state.hands.map((h) => h.length),
+        state: serializeState(state),
     };
-    fs.appendFileSync(GAME_LOG_PATH, `${JSON.stringify(line)}\n`, "utf8");
+
+    gameLog.entries.push(entry);
+    flushGameLog();
 }
 
 function defaultShuffle(deck: Card[]): Card[] {
