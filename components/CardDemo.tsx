@@ -153,10 +153,14 @@ export function CardDemo({
   useLayoutEffect(() => {
     if (variant !== "embedded") return;
     if (!playerCards || playerCards.length !== HAND_SIZE) return;
+    // After first deal, parent uses `gameHandSync` to apply hand updates (e.g. post-trade).
+    // Re-running the full deal here would leave `dealPhase` stuck in "measuring" when the
+    // center stack is unmounted during play (`externalStackRef` null), so hand vanishes.
+    if (gameHandSync) return;
     beginDealWithCards(playerCards);
     // Intentionally run when variant/playerCards change (parent remount + stable hand).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- beginDealWithCards closes over fresh deal state
-  }, [variant, playerCards]);
+  }, [variant, playerCards, gameHandSync]);
 
   useEffect(() => {
     if (variant !== "embedded" || !gameHandSync || !playerCards) return;
