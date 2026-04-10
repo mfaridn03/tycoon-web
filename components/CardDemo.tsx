@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createDeck } from "@/lib/game/constants";
-import type { Card, Suit } from "@/lib/game/types";
-import { DEFAULT_RANK_ORDER } from "@/lib/game/types";
+import type { Card, Rank, Suit } from "@/lib/game/types";
+import { DEFAULT_RANK_ORDER, DEFAULT_RANK_SEQUENCE } from "@/lib/game/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
@@ -40,11 +40,79 @@ function sortCards(cards: Card[]): Card[] {
   });
 }
 
+/** Lexicographic k-combinations of indices (indices sorted ascending). */
+function combinations(indices: number[], k: number): number[][] {
+  const n = indices.length;
+  if (k < 0 || k > n) return [];
+  if (k === 0) return [[]];
+  const out: number[][] = [];
+  const path: number[] = [];
+  function dfs(start: number) {
+    if (path.length === k) {
+      out.push([...path]);
+      return;
+    }
+    for (let j = start; j < n; j++) {
+      path.push(indices[j]!);
+      dfs(j + 1);
+      path.pop();
+    }
+  }
+  dfs(0);
+  return out;
+}
+
+function buildChoiceSequences(cards: Card[]): {
+  single: number[][];
+  pair: number[][];
+  triple: number[][];
+  revolution: number[][];
+} {
+  const byRank = new Map<Rank, number[]>();
+  for (let i = 0; i < cards.length; i++) {
+    const r = cards[i]!.rank;
+    if (!byRank.has(r)) byRank.set(r, []);
+    byRank.get(r)!.push(i);
+  }
+
+  const single: number[][] = cards.map((_, i) => [i]);
+  const pair: number[][] = [];
+  const triple: number[][] = [];
+  const revolution: number[][] = [];
+
+  for (const rank of DEFAULT_RANK_SEQUENCE) {
+    const indices = byRank.get(rank);
+    if (!indices || indices.length === 0) continue;
+    if (indices.length >= 2) pair.push(...combinations(indices, 2));
+    if (indices.length >= 3) triple.push(...combinations(indices, 3));
+    if (indices.length >= 4) revolution.push(...combinations(indices, 4));
+  }
+
+  return { single, pair, triple, revolution };
+}
+
+type ChoiceKey = "single" | "pair" | "triple" | "revolution";
+
+const INITIAL_CURSORS: Record<ChoiceKey, number> = {
+  single: 0,
+  pair: 0,
+  triple: 0,
+  revolution: 0,
+};
+
 export function CardDemo() {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
   );
+  const [choiceSequences, setChoiceSequences] = useState<{
+    single: number[][];
+    pair: number[][];
+    triple: number[][];
+    revolution: number[][];
+  }>({ single: [], pair: [], triple: [], revolution: [] });
+  const [choiceCursors, setChoiceCursors] =
+    useState<Record<ChoiceKey, number>>(INITIAL_CURSORS);
   const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
   const [drawId, setDrawId] = useState(0);
 
@@ -66,11 +134,29 @@ export function CardDemo() {
     timersRef.current = [];
     cardSlotsRef.current = [];
     setSelectedIndices(new Set());
+    setChoiceCursors(INITIAL_CURSORS);
 
     const deck = shuffleDeck(createDeck());
-    setDrawnCards(sortCards(deck.slice(0, HAND_SIZE)));
+    const cards = sortCards(deck.slice(0, HAND_SIZE));
+    setDrawnCards(cards);
+    setChoiceSequences(buildChoiceSequences(cards));
     setDrawId((n) => n + 1);
     setDealPhase("measuring");
+  }
+
+  function pickNextChoice(key: ChoiceKey) {
+    setChoiceCursors((prev) => {
+      const list = choiceSequences[key];
+      const i = prev[key];
+      if (i >= list.length) return prev;
+      const indices = list[i]!;
+      setSelectedIndices((sel) => {
+        const next = new Set(sel);
+        for (const ix of indices) next.add(ix);
+        return next;
+      });
+      return { ...prev, [key]: i + 1 };
+    });
   }
 
   // measuring → compute fly offsets → atStack
@@ -182,6 +268,9 @@ export function CardDemo() {
   }
 
   const isAnimating = !["idle", "done"].includes(dealPhase);
+  const canUseChoices = dealPhase === "done";
+  const { single: singleChoices, pair: pairChoices, triple: tripleChoices, revolution: revolutionChoices } =
+    choiceSequences;
 
   return (
     <div className="flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen">
@@ -334,6 +423,63 @@ export function CardDemo() {
           );
         })}
       </div>
+
+      {/* Pattern pickers — lowest-first sequences per click */}
+      {drawnCards.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
+          {singleChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("single")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.single >= singleChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Single
+            </button>
+          )}
+          {pairChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("pair")}
+              disabled={
+                !canUseChoices || choiceCursors.pair >= pairChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Pairs
+            </button>
+          )}
+          {tripleChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("triple")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.triple >= tripleChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Triples
+            </button>
+          )}
+          {revolutionChoices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => pickNextChoice("revolution")}
+              disabled={
+                !canUseChoices ||
+                choiceCursors.revolution >= revolutionChoices.length
+              }
+              className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Revolution
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
