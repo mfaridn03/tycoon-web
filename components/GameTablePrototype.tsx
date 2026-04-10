@@ -10,17 +10,16 @@ import {
 } from "react";
 import { CardDemo } from "@/components/CardDemo";
 import { CardBack } from "@/components/cards/CardBack";
+import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { chooseBotPlay } from "@/lib/game/bots";
 import {
   canPass,
-  formatCards,
   formatScores,
-  playerLabel,
 } from "@/lib/game/cli-helpers";
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/validation";
-import type { Card, GameEvent, GameState, PlayerId } from "@/lib/game/types";
+import type { Card, GameEvent, GameState, PlayerId, TrickState } from "@/lib/game/types";
 import { RoundPhase } from "@/lib/game/types";
 
 const STACK_CARD_W = 96;
@@ -35,12 +34,43 @@ const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const STACK_DEPTH = HAND_SIZE;
 const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
+const PLAY_FLY_DURATION = 280;
 
 const HUMAN_ID = 0 as PlayerId;
 
-type TablePhase = "pre" | "dealing" | "playing" | "roundOver";
+const PLAYER_LABELS: Record<number, string> = {
+  0: "You",
+  1: "Bot A",
+  2: "Bot B",
+  3: "Bot C",
+};
 
+// Fly-in origin per player: card slides from their table edge to center
+const PLAY_ORIGINS: Record<number, string> = {
+  0: "translateY(60px)",   // human — bottom
+  1: "translateX(-60px)",  // bot-left
+  2: "translateY(-60px)",  // bot-top
+  3: "translateX(60px)",   // bot-right
+};
+
+type TablePhase = "pre" | "dealing" | "playing" | "roundOver";
 type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
+type PlayedCardPhase = "initial" | "landing" | "done";
+
+type CenterCardEntry = {
+  cards: Card[];
+  playerId: PlayerId;
+  animKey: number;
+};
+
+type CenterPrevEntry = {
+  cards: Card[];
+  playerId: PlayerId;
+};
+
+// ---------------------------------------------------------------------------
+// CenterStack
+// ---------------------------------------------------------------------------
 
 function CenterStack({
   stackRef,
@@ -91,6 +121,10 @@ function CenterStack({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// BotHandStrip
+// ---------------------------------------------------------------------------
 
 function BotHandStrip({
   stackRef,
@@ -259,6 +293,148 @@ function BotHandStrip({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Face-up card (SVG, no interaction)
+// ---------------------------------------------------------------------------
+
+function FaceUpCard({ cards }: { cards: Card[] }) {
+  const card = cards[0];
+  return (
+    <svg
+      viewBox="0 0 80 112"
+      width={STACK_CARD_W}
+      height={STACK_CARD_H}
+      style={{ display: "block" }}
+    >
+      <CardFaceContent rank={card.rank} suit={card.suit} />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AnimatedPlayedCard — slides in from the playing player's direction
+// ---------------------------------------------------------------------------
+
+function AnimatedPlayedCard({
+  cards,
+  playerId,
+}: {
+  cards: Card[];
+  playerId: PlayerId;
+}) {
+  const [phase, setPhase] = useState<PlayedCardPhase>("initial");
+
+  useEffect(() => {
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setPhase("landing"));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "landing") return;
+    const t = setTimeout(() => setPhase("done"), PLAY_FLY_DURATION + 50);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  const origin = PLAY_ORIGINS[playerId] ?? "translateY(60px)";
+
+  const style: CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    zIndex: 2,
+    transform: phase === "initial" ? origin : "translate(0,0)",
+    opacity: phase === "initial" ? 0 : 1,
+    transition:
+      phase === "landing"
+        ? `transform ${PLAY_FLY_DURATION}ms ease-out, opacity ${Math.round(PLAY_FLY_DURATION * 0.6)}ms ease-out`
+        : undefined,
+    filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.45))",
+  };
+
+  return (
+    <div style={style}>
+      <FaceUpCard cards={cards} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CenterPlayArea — trick cards + pass indicators
+// ---------------------------------------------------------------------------
+
+function CenterPlayArea({
+  current,
+  prev,
+  visiblePassers,
+}: {
+  current: CenterCardEntry | null;
+  prev: CenterPrevEntry | null;
+  visiblePassers: Set<PlayerId>;
+}) {
+  const hasCards = current !== null || prev !== null;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      {hasCards && (
+        <div
+          className="relative"
+          style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
+        >
+          {/* Previous play — offset slightly and greyed out */}
+          {prev && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 1,
+                transform: "translate(4px, 4px)",
+                opacity: 0.35,
+                filter: "grayscale(70%)",
+              }}
+            >
+              <FaceUpCard cards={prev.cards} />
+            </div>
+          )}
+
+          {/* Current play — animated in */}
+          {current && (
+            <AnimatedPlayedCard
+              key={current.animKey}
+              cards={current.cards}
+              playerId={current.playerId}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Pass indicator badges */}
+      {visiblePassers.size > 0 && (
+        <div className="flex flex-wrap justify-center gap-1">
+          {([0, 1, 2, 3] as PlayerId[]).map((pid) =>
+            visiblePassers.has(pid) ? (
+              <span
+                key={pid}
+                className="rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow"
+              >
+                {PLAYER_LABELS[pid]} pass
+              </span>
+            ) : null,
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GameTablePrototype
+// ---------------------------------------------------------------------------
+
 export function GameTablePrototype() {
   const stackRef = useRef<HTMLDivElement>(null);
   const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
@@ -268,6 +444,23 @@ export function GameTablePrototype() {
   const [dealingStackProgress, setDealingStackProgress] = useState(0);
   const [playError, setPlayError] = useState<string | null>(null);
 
+  // Center play display state
+  const [centerCurrent, setCenterCurrent] = useState<CenterCardEntry | null>(null);
+  const [centerPrev, setCenterPrev] = useState<CenterPrevEntry | null>(null);
+  const [visiblePassers, setVisiblePassers] = useState<Set<PlayerId>>(new Set());
+  const prevTrickRef = useRef<TrickState | null>(null);
+  const centerCurrentRef = useRef<CenterCardEntry | null>(null);
+  const animKeyRef = useRef(0);
+  const passTimersRef = useRef<Map<PlayerId, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Cleanup pass timers on unmount
+  useEffect(
+    () => () => {
+      passTimersRef.current.forEach(clearTimeout);
+    },
+    [],
+  );
+
   const stackProgress =
     tablePhase === "pre"
       ? 0
@@ -275,8 +468,19 @@ export function GameTablePrototype() {
         ? dealingStackProgress
         : 1;
 
+  const clearCenterState = useCallback(() => {
+    setCenterCurrent(null);
+    setCenterPrev(null);
+    setVisiblePassers(new Set());
+    centerCurrentRef.current = null;
+    prevTrickRef.current = null;
+    passTimersRef.current.forEach(clearTimeout);
+    passTimersRef.current.clear();
+  }, []);
+
   const startGame = useCallback(() => {
     setPlayError(null);
+    clearCenterState();
     const s0 = createInitialGameState();
     const r = dispatch(s0, { type: "startRound" }, shuffleDeck);
     if (!r.ok) {
@@ -287,13 +491,14 @@ export function GameTablePrototype() {
     setDealId((n) => n + 1);
     setDealingStackProgress(0);
     setTablePhase("dealing");
-  }, []);
+  }, [clearCenterState]);
 
   const resetGame = useCallback(() => {
     setGameState(null);
     setPlayError(null);
     setTablePhase("pre");
-  }, []);
+    clearCenterState();
+  }, [clearCenterState]);
 
   const onPlayerDealComplete = useCallback(() => {
     setTablePhase("playing");
@@ -331,6 +536,7 @@ export function GameTablePrototype() {
     });
   }, []);
 
+  // Bot turns — 1 second delay for pacing
   useEffect(() => {
     if (tablePhase !== "playing" || !gameState) return;
     if (gameState.phase !== RoundPhase.Play) return;
@@ -353,9 +559,67 @@ export function GameTablePrototype() {
         }
         return r.state;
       });
-    }, 320);
+    }, 1000);
     return () => clearTimeout(t);
   }, [gameState, tablePhase]);
+
+  // Track trick state changes → update center card display
+  useEffect(() => {
+    if (!gameState) {
+      prevTrickRef.current = null;
+      return;
+    }
+
+    const prev = prevTrickRef.current;
+    const curr = gameState.trick;
+    prevTrickRef.current = curr;
+
+    if (!prev) return; // first render — establish baseline only
+
+    // New play landed on top
+    if (curr.topPlay !== null && curr.topPlay !== prev.topPlay) {
+      const newEntry: CenterCardEntry = {
+        cards: curr.topPlay.cards,
+        playerId: curr.topPlayerId!,
+        animKey: ++animKeyRef.current,
+      };
+      setCenterPrev(
+        centerCurrentRef.current
+          ? { cards: centerCurrentRef.current.cards, playerId: centerCurrentRef.current.playerId }
+          : null,
+      );
+      centerCurrentRef.current = newEntry;
+      setCenterCurrent(newEntry);
+    }
+
+    // Trick ended — clear the table
+    if (curr.topPlay === null && prev.topPlay !== null) {
+      centerCurrentRef.current = null;
+      setCenterCurrent(null);
+      setCenterPrev(null);
+      setVisiblePassers(new Set());
+      passTimersRef.current.forEach(clearTimeout);
+      passTimersRef.current.clear();
+    }
+
+    // New passers since last state
+    const prevPassed = new Set(prev.passedPlayerIds);
+    const newPassers = curr.passedPlayerIds.filter((id) => !prevPassed.has(id));
+    for (const pid of newPassers) {
+      const existing = passTimersRef.current.get(pid);
+      if (existing) clearTimeout(existing);
+      setVisiblePassers((s) => new Set([...s, pid]));
+      const t = setTimeout(() => {
+        setVisiblePassers((s) => {
+          const next = new Set(s);
+          next.delete(pid);
+          return next;
+        });
+        passTimersRef.current.delete(pid);
+      }, 1500);
+      passTimersRef.current.set(pid, t);
+    }
+  }, [gameState]);
 
   useEffect(() => {
     if (tablePhase !== "dealing") return;
@@ -394,17 +658,26 @@ export function GameTablePrototype() {
     playMode && gameState ? getLegalPlays(gameState, HUMAN_ID) : null;
 
   return (
-    <div className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950">
+    <div
+      className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950"
+      style={
+        gameState?.revolutionActive
+          ? { background: "linear-gradient(to bottom, #450a0a, #7f1d1d, #450a0a)" }
+          : undefined
+      }
+    >
       <div
         className={`relative flex min-h-dvh flex-col transition-[filter,opacity] duration-300 ${
           tablePhase === "pre" ? "blur-sm" : ""
         }`}
       >
-        {/* Table surface */}
+        {/* Table surface glow */}
         <div
           className="pointer-events-none absolute inset-0 opacity-40"
           style={{
-            backgroundImage: `radial-gradient(ellipse 80% 60% at 50% 45%, rgba(16, 185, 129, 0.25), transparent 70%)`,
+            backgroundImage: gameState?.revolutionActive
+              ? `radial-gradient(ellipse 80% 60% at 50% 45%, rgba(185, 16, 16, 0.35), transparent 70%)`
+              : `radial-gradient(ellipse 80% 60% at 50% 45%, rgba(16, 185, 129, 0.25), transparent 70%)`,
           }}
         />
 
@@ -435,25 +708,20 @@ export function GameTablePrototype() {
               />
             )}
 
-            {/* Center stack + felt */}
+            {/* Center area */}
             <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-1">
-              {showTable && (
+              {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
+              {showTable && tablePhase !== "playing" && tablePhase !== "roundOver" && (
                 <CenterStack stackRef={stackRef} progress={stackProgress} />
               )}
-              {tablePhase === "playing" && gameState?.phase === RoundPhase.Play && (
-                <div className="max-w-[min(100%,320px)] text-center text-[11px] leading-snug text-emerald-100/95 sm:text-xs">
-                  <div className="font-medium text-emerald-50">
-                    {playerLabel(gameState.activePlayerId)}&apos;s turn
-                  </div>
-                  {gameState.trick.topPlay ? (
-                    <div className="mt-0.5 text-emerald-200/90">
-                      Top: {formatCards(gameState.trick.topPlay.cards)} (
-                      {playerLabel(gameState.trick.topPlayerId!)})
-                    </div>
-                  ) : (
-                    <div className="mt-0.5 text-emerald-200/90">New trick — play any legal set</div>
-                  )}
-                </div>
+
+              {/* Played cards + pass indicators */}
+              {tablePhase === "playing" && (
+                <CenterPlayArea
+                  current={centerCurrent}
+                  prev={centerPrev}
+                  visiblePassers={visiblePassers}
+                />
               )}
             </div>
 
