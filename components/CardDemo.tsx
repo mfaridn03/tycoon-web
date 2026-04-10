@@ -82,6 +82,10 @@ export function CardDemo({
   const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const drawnCardsRef = useRef<Card[]>([]);
+  drawnCardsRef.current = drawnCards;
+  const pendingSyncRef = useRef<Card[] | null>(null);
+  const [exitingIndices, setExitingIndices] = useState<Set<number>>(new Set());
 
   /**
    * Set of card indices that appear in at least one legal play.
@@ -141,9 +145,31 @@ export function CardDemo({
   useEffect(() => {
     if (variant !== "embedded" || !gameHandSync || !playerCards) return;
     if (dealPhase !== "done") return;
-    const sorted = sortPlayerHand(playerCards);
-    setDrawnCards(sorted);
-    setSelectedIndices(new Set());
+
+    const newSorted = sortPlayerHand(playerCards);
+    const current = drawnCardsRef.current;
+    const newKeys = new Set(newSorted.map((c) => `${c.rank}:${c.suit}`));
+    const exiting = current
+      .map((card, i) => ({ card, i }))
+      .filter(({ card }) => !newKeys.has(`${card.rank}:${card.suit}`))
+      .map(({ i }) => i);
+
+    if (exiting.length > 0) {
+      pendingSyncRef.current = newSorted;
+      setExitingIndices(new Set(exiting));
+      setSelectedIndices(new Set());
+      const t = setTimeout(() => {
+        if (pendingSyncRef.current) {
+          setDrawnCards(pendingSyncRef.current);
+          pendingSyncRef.current = null;
+        }
+        setExitingIndices(new Set());
+      }, 320);
+      timersRef.current.push(t);
+    } else {
+      setDrawnCards(newSorted);
+      setSelectedIndices(new Set());
+    }
   }, [playerCards, gameHandSync, dealPhase, variant]);
 
   const clearSelectionAndResetChoices = useCallback(() => {
@@ -252,6 +278,15 @@ export function CardDemo({
   }
 
   function getSlotStyle(index: number): React.CSSProperties {
+    if (exitingIndices.has(index)) {
+      return {
+        transform: "translateY(-18px) scale(0.8)",
+        opacity: 0,
+        transition: "transform 280ms ease-out, opacity 260ms ease-out",
+        pointerEvents: "none",
+      };
+    }
+
     const offset = flyOffsets[index] ?? { x: 0, y: 0 };
 
     switch (dealPhase) {

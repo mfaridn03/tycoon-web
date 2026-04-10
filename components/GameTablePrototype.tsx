@@ -161,9 +161,55 @@ function BotHandStrip({
   const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Pass flash
+  const [isFlashing, setIsFlashing] = useState(false);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!showPass) return;
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    queueMicrotask(() => setIsFlashing(true));
+    flashTimerRef.current = setTimeout(() => setIsFlashing(false), 1000);
+  }, [showPass]);
+
+  // Ghost cards for smooth deck shrink when cards are played
+  const [ghosts, setGhosts] = useState<number[]>([]);
+  const [ghostsVisible, setGhostsVisible] = useState(false);
+  const prevCardsLenRef = useRef(cards.length);
+  const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (dealPhase !== "done") {
+      prevCardsLenRef.current = cards.length;
+      return;
+    }
+    const prevLen = prevCardsLenRef.current;
+    prevCardsLenRef.current = cards.length;
+    if (cards.length >= prevLen) return;
+
+    const startIdx = cards.length;
+    const indices = Array.from({ length: prevLen - cards.length }, (_, k) => startIdx + k);
+    setGhosts(indices);
+    setGhostsVisible(true);
+
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setGhostsVisible(false));
+    });
+    if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+    ghostTimerRef.current = setTimeout(() => setGhosts([]), 420);
+
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, [cards.length, dealPhase]);
+
   useEffect(
     () => () => {
       timersRef.current.forEach(clearTimeout);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
     },
     [],
   );
@@ -264,17 +310,18 @@ function BotHandStrip({
           className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
         >
           <div style={{ transform: `translateX(${labelShiftX}px)` }} className="flex flex-col items-center gap-1">
-            <div className="text-xs font-semibold leading-none text-emerald-100">
+            <div
+              className="text-xs font-semibold leading-none"
+              style={{ color: isFlashing ? "#f87171" : "#d1fae5", transition: "color 200ms ease" }}
+            >
               {botName}
             </div>
-            <div className="text-[11px] leading-none text-emerald-200/80">
+            <div
+              className="text-[11px] leading-none"
+              style={{ color: isFlashing ? "#fca5a5" : "rgba(167,243,208,0.8)", transition: "color 200ms ease" }}
+            >
               {cards.length} cards
             </div>
-            {showPass && (
-              <div className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold uppercase tracking-widest text-white shadow">
-                Pass
-              </div>
-            )}
           </div>
         </div>
 
@@ -298,6 +345,26 @@ function BotHandStrip({
                 top: 0,
                 zIndex: i,
                 ...slotStyle(i),
+              }}
+            >
+              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+                <CardBack />
+              </div>
+            </div>
+          ))}
+          {ghosts.map((i) => (
+            <div
+              key={`ghost-${i}`}
+              style={{
+                width: BOT_CARD_W,
+                height: BOT_CARD_H,
+                position: "absolute",
+                left: i * BOT_STRIP_STEP,
+                top: 0,
+                zIndex: i,
+                opacity: ghostsVisible ? 1 : 0,
+                transition: "opacity 380ms ease-out",
+                pointerEvents: "none",
               }}
             >
               <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
@@ -383,6 +450,52 @@ function AnimatedPlayedCards({
 }
 
 // ---------------------------------------------------------------------------
+// FadingPrev — greyed previous play that fades out when cleared
+// ---------------------------------------------------------------------------
+
+function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId: PlayerId }) {
+  const active = prev?.playerId === playerId ? prev : null;
+  const [displayed, setDisplayed] = useState<CenterPrevEntry | null>(active);
+  const [opacity, setOpacity] = useState(0.38);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const next = prev?.playerId === playerId ? prev : null;
+    if (next) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setDisplayed(next);
+      setOpacity(0.38);
+    } else if (displayed) {
+      setOpacity(0);
+      timerRef.current = setTimeout(() => setDisplayed(null), 320);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prev, playerId]);
+
+  if (!displayed) return null;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 1,
+        transform: "scale(0.88)",
+        transformOrigin: "bottom center",
+        opacity,
+        transition: "opacity 300ms ease",
+        filter: "grayscale(65%)",
+        marginBottom: -(PLAY_CARD_H * 0.45),
+      }}
+    >
+      <FaceUpCards cards={displayed.cards} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PlayerPlayZone — prev (greyed, peeking above) + current (animated) per slot
 // ---------------------------------------------------------------------------
 
@@ -396,9 +509,9 @@ function PlayerPlayZone({
   prev: CenterPrevEntry | null;
 }) {
   const showCurrent = current?.playerId === playerId;
-  const showPrev = prev?.playerId === playerId;
+  const hasPrev = prev?.playerId === playerId;
 
-  if (!showCurrent && !showPrev) return null;
+  if (!showCurrent && !hasPrev) return null;
 
   return (
     <div
@@ -411,21 +524,7 @@ function PlayerPlayZone({
         justifyContent: "center",
       }}
     >
-      {showPrev && (
-        <div
-          style={{
-            position: "relative",
-            zIndex: 1,
-            transform: "scale(0.88)",
-            transformOrigin: "bottom center",
-            opacity: 0.38,
-            filter: "grayscale(65%)",
-            marginBottom: -(PLAY_CARD_H * 0.45),
-          }}
-        >
-          <FaceUpCards cards={prev!.cards} />
-        </div>
-      )}
+      <FadingPrev prev={prev} playerId={playerId} />
       {showCurrent && (
         <div style={{ position: "relative", zIndex: 2 }}>
           <AnimatedPlayedCards
@@ -464,6 +563,7 @@ function AllPlayZones({
               left: `calc(50% + ${dx}px)`,
               top: `calc(50% + ${dy}px)`,
               transform: "translate(-50%, -50%)",
+              zIndex: current?.playerId === pid ? 10 : 1,
             }}
           >
             <PlayerPlayZone playerId={pid} current={current} prev={prev} />
