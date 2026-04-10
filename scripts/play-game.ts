@@ -1,10 +1,14 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { createInitialGameState, dispatch } from "../lib/game/engine";
 import { getLegalPlays } from "../lib/game/validation";
 import { getRankOrder, TOTAL_ROUNDS } from "../lib/game/constants";
 import {
+    type ActionResult,
     type Card,
+    type GameAction,
     type GameEvent,
     type GameState,
     RoundPhase,
@@ -26,6 +30,59 @@ import {
 
 const rl = readline.createInterface({ input, output });
 const isInteractiveCli = Boolean(input.isTTY && output.isTTY);
+
+const GAME_LOG_PATH =
+    process.env.TYCOON_GAME_LOG ?? path.join(process.cwd(), "game-history.log");
+
+function initGameLogFile(): void {
+    const header = {
+        type: "sessionStart",
+        startedAt: new Date().toISOString(),
+        logPath: GAME_LOG_PATH,
+    };
+    fs.writeFileSync(GAME_LOG_PATH, `${JSON.stringify(header)}\n`, "utf8");
+}
+
+function serializeAction(action: GameAction): Record<string, unknown> {
+    switch (action.type) {
+        case "play":
+            return {
+                type: action.type,
+                playerId: action.playerId,
+                cards: formatCards(action.cards),
+            };
+        case "completeTrade":
+            return {
+                type: action.type,
+                playerId: action.playerId,
+                cards: formatCards(action.cards),
+            };
+        case "pass":
+            return { type: action.type, playerId: action.playerId };
+        case "startRound":
+            return { type: action.type };
+    }
+}
+
+function appendGameLog(
+    state: GameState,
+    action: GameAction,
+    events: GameEvent[],
+): void {
+    const line = {
+        at: new Date().toISOString(),
+        round: state.roundNumber,
+        phase: state.phase,
+        action: serializeAction(action),
+        events,
+        scores: [...state.scores],
+        activePlayerId: state.activePlayerId,
+        finishOrder: [...state.finishOrder],
+        demotedTycoonId: state.demotedTycoonId,
+        handSizes: state.hands.map((h) => h.length),
+    };
+    fs.appendFileSync(GAME_LOG_PATH, `${JSON.stringify(line)}\n`, "utf8");
+}
 
 function defaultShuffle(deck: Card[]): Card[] {
     const arr = [...deck];
@@ -171,11 +228,12 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
             `Auto-selecting lowest ${req.count} card(s): ${formatCards(autoCards)}`,
         );
 
-        const r = dispatch(s, {
+        const action: GameAction = {
             type: "completeTrade",
             playerId: req.receiverId,
             cards: autoCards,
-        });
+        };
+        const r = dispatch(s, action);
 
         if (!r.ok) {
             console.log(`Trade error: ${r.reason}`);
@@ -183,6 +241,7 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
         }
 
         printEvents(r.events);
+        appendGameLog(r.state, action, r.events);
         s = r.state;
     }
 
@@ -219,19 +278,22 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
         const max = options.length;
         const choice = await promptNumber("> ", min, max);
 
-        let result;
+        let result: ActionResult;
         let historyEntry: TrickHistoryEntry;
+        let action: GameAction;
         if (choice === 0) {
             historyEntry = { type: "pass", playerId: pid };
-            result = dispatch(s, { type: "pass", playerId: pid });
+            action = { type: "pass", playerId: pid };
+            result = dispatch(s, action);
         } else {
             const chosen = options[choice - 1];
             historyEntry = { type: "play", playerId: pid, cards: chosen.cards };
-            result = dispatch(s, {
+            action = {
                 type: "play",
                 playerId: pid,
                 cards: chosen.cards,
-            });
+            };
+            result = dispatch(s, action);
         }
 
         if (!result.ok) {
@@ -239,6 +301,7 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
             continue;
         }
 
+        appendGameLog(result.state, action, result.events);
         trickHistory = [...trickHistory, historyEntry];
         eventMessages = getEventMessages(result.events);
         if (result.events.some((event) => event.type === "trickEnded")) {
@@ -260,21 +323,20 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
 
 async function main() {
     console.log("=== TYCOON — CLI ===\n");
+    initGameLogFile();
 
     let state = createInitialGameState();
 
     for (let round = 1; round <= TOTAL_ROUNDS; round++) {
         console.log(`\n========== ROUND ${round} ==========\n`);
 
-        const r = dispatch(
-            state,
-            { type: "startRound" },
-            defaultShuffle,
-        );
+        const startAction: GameAction = { type: "startRound" };
+        const r = dispatch(state, startAction, defaultShuffle);
         if (!r.ok) {
             console.log(`Failed to start round: ${r.reason}`);
             break;
         }
+        appendGameLog(r.state, startAction, r.events);
         state = r.state;
 
         if (state.phase === RoundPhase.Trade) {
