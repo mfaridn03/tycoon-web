@@ -450,43 +450,77 @@ function AnimatedPlayedCards({
 }
 
 // ---------------------------------------------------------------------------
-// FadingPrev — greyed previous play that fades out when cleared
+// FadingPrev — greyed previous play: fades IN from full card, fades OUT when cleared
 // ---------------------------------------------------------------------------
 
+type PrevPhase = "fresh" | "settled" | "fading";
+
 function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId: PlayerId }) {
-  const active = prev?.playerId === playerId ? prev : null;
-  const [displayed, setDisplayed] = useState<CenterPrevEntry | null>(active);
-  const [opacity, setOpacity] = useState(0.38);
+  const [displayed, setDisplayed] = useState<CenterPrevEntry | null>(null);
+  const [phase, setPhase] = useState<PrevPhase>("settled");
+  const displayedRef = useRef<CenterPrevEntry | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafIds = useRef<number[]>([]);
 
   useEffect(() => {
-    const next = prev?.playerId === playerId ? prev : null;
-    if (next) {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      setDisplayed(next);
-      setOpacity(0.38);
-    } else if (displayed) {
-      setOpacity(0);
-      timerRef.current = setTimeout(() => setDisplayed(null), 320);
-    }
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+    const cancel = () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      rafIds.current.forEach(cancelAnimationFrame);
+      rafIds.current = [];
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    const next = prev?.playerId === playerId ? prev : null;
+
+    if (next) {
+      cancel();
+      displayedRef.current = next;
+      // Mount in "fresh" (full-card) appearance, then transition to grey
+      queueMicrotask(() => {
+        setDisplayed(next);
+        setPhase("fresh");
+      });
+      const id1 = requestAnimationFrame(() => {
+        const id2 = requestAnimationFrame(() => setPhase("settled"));
+        rafIds.current.push(id2);
+      });
+      rafIds.current.push(id1);
+    } else if (displayedRef.current) {
+      cancel();
+      // Ensure "settled" is painted before triggering fade-out
+      const id1 = requestAnimationFrame(() => {
+        const id2 = requestAnimationFrame(() => {
+          setPhase("fading");
+          timerRef.current = setTimeout(() => {
+            setDisplayed(null);
+            displayedRef.current = null;
+          }, 400);
+        });
+        rafIds.current.push(id2);
+      });
+      rafIds.current.push(id1);
+    }
+
+    return cancel;
+   
   }, [prev, playerId]);
 
   if (!displayed) return null;
+
+  const isFresh = phase === "fresh";
+  const isFading = phase === "fading";
 
   return (
     <div
       style={{
         position: "relative",
         zIndex: 1,
-        transform: "scale(0.88)",
+        transform: `scale(${isFresh ? 1 : 0.88})`,
         transformOrigin: "bottom center",
-        opacity,
-        transition: "opacity 300ms ease",
-        filter: "grayscale(65%)",
+        opacity: isFresh ? 1 : isFading ? 0 : 0.38,
+        transition: isFresh
+          ? "none"
+          : "opacity 360ms ease, transform 360ms ease, filter 360ms ease",
+        filter: isFresh ? "none" : "grayscale(65%)",
         marginBottom: -(PLAY_CARD_H * 0.45),
       }}
     >
@@ -509,9 +543,6 @@ function PlayerPlayZone({
   prev: CenterPrevEntry | null;
 }) {
   const showCurrent = current?.playerId === playerId;
-  const hasPrev = prev?.playerId === playerId;
-
-  if (!showCurrent && !hasPrev) return null;
 
   return (
     <div
@@ -890,13 +921,6 @@ export function GameTablePrototype() {
           {/* Player */}
           {showTable && hands && (
             <div className="mt-auto w-full pb-4 pt-2">
-              {visiblePassers.has(HUMAN_ID) && (
-                <div className="mb-2 flex justify-center">
-                  <div className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold uppercase tracking-widest text-white shadow">
-                    Pass
-                  </div>
-                </div>
-              )}
               <CardDemo
                 key={dealId}
                 variant="embedded"
