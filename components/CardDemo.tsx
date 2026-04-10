@@ -40,6 +40,12 @@ export type CardDemoPlayMode = {
   playError?: string | null;
 };
 
+export type CardDemoTradeMode = {
+  pickCount: number;
+  onConfirm: (cards: Card[]) => void;
+  error?: string | null;
+};
+
 export type CardDemoProps = {
   variant?: "standalone" | "embedded";
   /** When set, fly animation measures from this stack (parent renders the stack). */
@@ -54,6 +60,8 @@ export type CardDemoProps = {
   gameHandSync?: boolean;
   /** Replaces demo pattern pickers with Pass / Play selected. */
   playMode?: CardDemoPlayMode | null;
+  /** Trade phase: pick exactly N cards then confirm. */
+  tradeMode?: CardDemoTradeMode | null;
 };
 
 export function CardDemo({
@@ -65,6 +73,7 @@ export function CardDemo({
   onDealComplete,
   gameHandSync = false,
   playMode = null,
+  tradeMode = null,
 }: CardDemoProps) {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
@@ -277,16 +286,14 @@ export function CardDemo({
 
   // When it's not our turn anymore, clear selection (prevents stale highlight).
   useEffect(() => {
-    if (playMode) return;
+    if (playMode || tradeMode) return;
     setSelectedIndices(new Set());
-  }, [playMode]);
+  }, [playMode, tradeMode]);
 
   function toggleSelection(index: number) {
-    // Only allow input while it's this player's turn.
     if (dealPhase !== "done") return;
-    if (!playMode) return;
-    // Greyed-out cards cannot be selected
-    if (legalCardIndices !== null && !legalCardIndices.has(index)) return;
+    if (!playMode && !tradeMode) return;
+    if (playMode && legalCardIndices !== null && !legalCardIndices.has(index)) return;
     setSelectedIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
@@ -343,7 +350,8 @@ export function CardDemo({
   const isAnimating = !["idle", "done"].includes(dealPhase);
   const canUseChoices = dealPhase === "done";
   const showPlayModeBar = canUseChoices && playMode;
-  const reservePlayModeBarSpace = variant === "embedded" || showPlayModeBar;
+  const showTradeModeBar = canUseChoices && tradeMode;
+  const reservePlayModeBarSpace = variant === "embedded" || showPlayModeBar || showTradeModeBar;
 
   const showOwnStack = variant === "standalone" || !externalStackRef;
   const rootClass =
@@ -421,7 +429,31 @@ export function CardDemo({
           className="flex w-full max-w-4xl flex-col items-center justify-start gap-2"
           style={{ minHeight: PLAY_MODE_BAR_MIN_H }}
         >
-          {showPlayModeBar && playMode ? (
+          {showTradeModeBar && tradeMode ? (
+            <>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idxs = [...selectedIndices].sort((a, b) => a - b);
+                    const cards = idxs.map((i) => drawnCards[i]!);
+                    tradeMode.onConfirm(cards);
+                    setSelectedIndices(new Set());
+                  }}
+                  disabled={selectedIndices.size !== tradeMode.pickCount}
+                  data-card-demo-interactive="true"
+                  className="rounded-full bg-yellow-400 px-6 py-2 text-sm font-semibold text-black transition-colors hover:bg-yellow-300 active:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Confirm trade ({selectedIndices.size}/{tradeMode.pickCount})
+                </button>
+              </div>
+              <div className="min-h-4">
+                {tradeMode.error ? (
+                  <p className="text-center text-xs text-red-300">{tradeMode.error}</p>
+                ) : null}
+              </div>
+            </>
+          ) : showPlayModeBar && playMode ? (
             <>
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {playMode.canPass && (
@@ -526,9 +558,8 @@ export function CardDemo({
             {drawnCards.map((card, i) => {
               const isSelected = selectedIndices.has(i);
               const isGreyed =
-                // When not this player's turn, treat all cards as disabled/grey.
-                !playMode ||
-                (legalCardIndices !== null && !legalCardIndices.has(i));
+                !playMode && !tradeMode ||
+                (playMode && legalCardIndices !== null && !legalCardIndices.has(i));
               return (
                 <div
                   key={`${drawId}-${card.rank}:${card.suit}`}

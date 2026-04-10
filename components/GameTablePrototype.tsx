@@ -15,9 +15,15 @@ import { chooseBotPlay } from "@/lib/game/bots";
 import {
   canPass,
   formatScores,
+  formatTradeRequirement,
   playerLabel,
 } from "@/lib/game/cli-helpers";
 import { getMatchWinner } from "@/lib/game/scoring";
+import {
+  buildBotTradeAction,
+  getNextPendingTrade,
+  isHumanTradeTurn,
+} from "@/lib/game/trade/helpers";
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/validation";
@@ -64,7 +70,7 @@ const PLAY_ORIGINS: Record<number, string> = {
   3: "translateX(60px)",   // bot-right
 };
 
-type TablePhase = "pre" | "dealing" | "playing" | "roundOver";
+type TablePhase = "pre" | "dealing" | "trading" | "playing" | "roundOver";
 type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
 type PlayedCardPhase = "initial" | "landing" | "done";
 
@@ -694,6 +700,8 @@ export function GameTablePrototype() {
   /** 0–1 while dealing; ignored when not dealing (see `stackProgress`). */
   const [dealingStackProgress, setDealingStackProgress] = useState(0);
   const [playError, setPlayError] = useState<string | null>(null);
+  const gameStateRef = useRef<GameState | null>(null);
+  gameStateRef.current = gameState;
 
   // Center play display state
   const [centerCurrent, setCenterCurrent] = useState<CenterCardEntry | null>(null);
@@ -779,7 +787,12 @@ export function GameTablePrototype() {
   }, [clearCenterState]);
 
   const onPlayerDealComplete = useCallback(() => {
-    setTablePhase("playing");
+    const gs = gameStateRef.current;
+    if (gs && gs.phase === RoundPhase.Trade) {
+      setTablePhase("trading");
+    } else {
+      setTablePhase("playing");
+    }
   }, []);
 
   const handleHumanPlay = useCallback((cards: Card[]) => {
@@ -834,6 +847,48 @@ export function GameTablePrototype() {
         if (!r.ok) return prev;
         if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
           queueMicrotask(() => setTablePhase("roundOver"));
+        }
+        return r.state;
+      });
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [gameState, tablePhase]);
+
+  // Human completeTrade handler
+  const handleCompleteTrade = useCallback((cards: Card[]) => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev || prev.phase !== RoundPhase.Trade) return prev;
+      const r = dispatch(prev, { type: "completeTrade", playerId: HUMAN_ID, cards });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.state.phase === RoundPhase.Play) {
+        queueMicrotask(() => setTablePhase("playing"));
+      }
+      return r.state;
+    });
+  }, []);
+
+  // Bot trade effect — auto-complete non-human trades with pacing
+  useEffect(() => {
+    if (tablePhase !== "trading" || !gameState) return;
+    if (gameState.phase !== RoundPhase.Trade || !gameState.tradeState) return;
+    const pending = getNextPendingTrade(gameState);
+    if (!pending) return;
+    if (pending.requirement.receiverId === HUMAN_ID) return;
+
+    const t = setTimeout(() => {
+      setGameState((prev) => {
+        if (!prev || prev.phase !== RoundPhase.Trade || !prev.tradeState) return prev;
+        const p = getNextPendingTrade(prev);
+        if (!p || p.requirement.receiverId === HUMAN_ID) return prev;
+        const action = buildBotTradeAction(prev, p);
+        const r = dispatch(prev, action);
+        if (!r.ok) return prev;
+        if (r.state.phase === RoundPhase.Play) {
+          queueMicrotask(() => setTablePhase("playing"));
         }
         return r.state;
       });
@@ -1053,6 +1108,21 @@ export function GameTablePrototype() {
   const legalPlays =
     playMode && gameState ? getLegalPlays(gameState, HUMAN_ID) : null;
 
+  const tradeMode =
+    tablePhase === "trading" &&
+    gameState?.phase === RoundPhase.Trade &&
+    isHumanTradeTurn(gameState, HUMAN_ID)
+      ? (() => {
+          const pending = getNextPendingTrade(gameState);
+          if (!pending) return null;
+          return {
+            pickCount: pending.requirement.count,
+            onConfirm: handleCompleteTrade,
+            error: playError,
+          };
+        })()
+      : null;
+
   return (
     <div
       className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950"
@@ -1109,9 +1179,27 @@ export function GameTablePrototype() {
             {/* Center area */}
             <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-1">
               {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
-              {showTable && tablePhase !== "playing" && tablePhase !== "roundOver" && (
+              {showTable && tablePhase !== "playing" && tablePhase !== "trading" && tablePhase !== "roundOver" && (
                 <CenterStack stackRef={stackRef} progress={stackProgress} />
               )}
+
+              {/* Trade info panel */}
+              {tablePhase === "trading" && gameState?.tradeState && (() => {
+                const pending = getNextPendingTrade(gameState);
+                if (!pending) return null;
+                const { requirement: req } = pending;
+                return (
+                  <div className="flex flex-col items-center gap-2 rounded-xl bg-black/30 px-6 py-4 text-center backdrop-blur-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Trading Phase</p>
+                    <p className="text-sm text-emerald-100">
+                      {formatTradeRequirement(req.giverId, req.receiverId, req.giverCards!, req.count)}
+                    </p>
+                    {req.receiverId === HUMAN_ID && (
+                      <p className="text-xs text-yellow-300">Select {req.count} card(s) to give</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Four dedicated play zones */}
               {tablePhase === "playing" && (
@@ -1142,8 +1230,9 @@ export function GameTablePrototype() {
                 playerCards={hands[0]!}
                 legalPlays={legalPlays}
                 onDealComplete={onPlayerDealComplete}
-                gameHandSync={tablePhase === "playing"}
+                gameHandSync={tablePhase === "playing" || tablePhase === "trading"}
                 playMode={playMode}
+                tradeMode={tradeMode}
                 className="flex w-full flex-col items-center gap-3"
               />
             </div>
