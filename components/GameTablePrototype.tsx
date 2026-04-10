@@ -530,6 +530,87 @@ function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId
 }
 
 // ---------------------------------------------------------------------------
+// FadingCurrent — current play card that fades out when trick ends
+// ---------------------------------------------------------------------------
+
+function FadingCurrent({
+  current,
+  playerId,
+  skipFade,
+}: {
+  current: CenterCardEntry | null;
+  playerId: PlayerId;
+  skipFade: boolean;
+}) {
+  const [displayed, setDisplayed] = useState<CenterCardEntry | null>(null);
+  const [fading, setFading] = useState(false);
+  const displayedRef = useRef<CenterCardEntry | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafIds = useRef<number[]>([]);
+
+  useEffect(() => {
+    const cancel = () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      rafIds.current.forEach(cancelAnimationFrame);
+      rafIds.current = [];
+    };
+
+    const next = current?.playerId === playerId ? current : null;
+
+    if (next) {
+      cancel();
+      displayedRef.current = next;
+      queueMicrotask(() => {
+        setDisplayed(next);
+        setFading(false);
+      });
+    } else if (displayedRef.current) {
+      cancel();
+      if (skipFade) {
+        displayedRef.current = null;
+        queueMicrotask(() => setDisplayed(null));
+      } else {
+        const id1 = requestAnimationFrame(() => {
+          const id2 = requestAnimationFrame(() => {
+            setFading(true);
+            timerRef.current = setTimeout(() => {
+              setDisplayed(null);
+              displayedRef.current = null;
+              setFading(false);
+            }, 400);
+          });
+          rafIds.current.push(id2);
+        });
+        rafIds.current.push(id1);
+      }
+    }
+
+    return cancel;
+   
+  }, [current, playerId, skipFade]);
+
+  if (!displayed) return null;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        opacity: fading ? 0 : 1,
+        transform: fading ? "scale(0.9)" : undefined,
+        transition: fading ? "opacity 360ms ease, transform 360ms ease" : undefined,
+      }}
+    >
+      <AnimatedPlayedCards
+        key={displayed.animKey}
+        cards={displayed.cards}
+        playerId={playerId}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PlayerPlayZone — prev (greyed, peeking above) + current (animated) per slot
 // ---------------------------------------------------------------------------
 
@@ -542,8 +623,6 @@ function PlayerPlayZone({
   current: CenterCardEntry | null;
   prev: CenterPrevEntry | null;
 }) {
-  const showCurrent = current?.playerId === playerId;
-
   return (
     <div
       style={{
@@ -556,15 +635,11 @@ function PlayerPlayZone({
       }}
     >
       <FadingPrev prev={prev} playerId={playerId} />
-      {showCurrent && (
-        <div style={{ position: "relative", zIndex: 2 }}>
-          <AnimatedPlayedCards
-            key={current!.animKey}
-            cards={current!.cards}
-            playerId={playerId}
-          />
-        </div>
-      )}
+      <FadingCurrent
+        current={current}
+        playerId={playerId}
+        skipFade={prev?.playerId === playerId}
+      />
     </div>
   );
 }
@@ -623,14 +698,17 @@ export function GameTablePrototype() {
   const [centerPrev, setCenterPrev] = useState<CenterPrevEntry | null>(null);
   const [visiblePassers, setVisiblePassers] = useState<Set<PlayerId>>(new Set());
   const prevTrickRef = useRef<TrickState | null>(null);
+  const prevGameStateRef = useRef<GameState | null>(null);
   const centerCurrentRef = useRef<CenterCardEntry | null>(null);
   const animKeyRef = useRef(0);
   const passTimersRef = useRef<Map<PlayerId, ReturnType<typeof setTimeout>>>(new Map());
+  const eightStopClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup pass timers on unmount
   useEffect(
     () => () => {
       passTimersRef.current.forEach(clearTimeout);
+      if (eightStopClearTimerRef.current) clearTimeout(eightStopClearTimerRef.current);
     },
     [],
   );
@@ -648,8 +726,13 @@ export function GameTablePrototype() {
     setVisiblePassers(new Set());
     centerCurrentRef.current = null;
     prevTrickRef.current = null;
+    prevGameStateRef.current = null;
     passTimersRef.current.forEach(clearTimeout);
     passTimersRef.current.clear();
+    if (eightStopClearTimerRef.current) {
+      clearTimeout(eightStopClearTimerRef.current);
+      eightStopClearTimerRef.current = null;
+    }
   }, []);
 
   const startGame = useCallback(() => {
@@ -741,17 +824,41 @@ export function GameTablePrototype() {
   useEffect(() => {
     if (!gameState) {
       prevTrickRef.current = null;
+      prevGameStateRef.current = null;
       return;
     }
 
+    const prevGS = prevGameStateRef.current;
     const prev = prevTrickRef.current;
     const curr = gameState.trick;
     prevTrickRef.current = curr;
+    prevGameStateRef.current = gameState;
 
-    if (!prev) return; // first render — establish baseline only
+    if (!prev || !prevGS) return; // first render — establish baseline only
 
-    // New play landed on top
+    const prevActivePlayer = prevGS.activePlayerId;
+
+    // Helper: recover cards played by a player between states
+    const getPlayedCards = (pid: PlayerId): Card[] => {
+      if (!prevGS) return [];
+      const oldHand = prevGS.hands[pid];
+      const newHand = gameState.hands[pid];
+      return oldHand.filter((c) => !newHand.some((nc) => nc.equals(c)));
+    };
+
+    // Helper: did a player's hand shrink (i.e. they played cards)?
+    const handShrank = (pid: PlayerId): boolean => {
+      if (!prevGS) return false;
+      return gameState.hands[pid].length < prevGS.hands[pid].length;
+    };
+
+    // Normal new play landed on top
     if (curr.topPlay !== null && curr.topPlay !== prev.topPlay) {
+      // Cancel any pending 8-stop clear from previous trick
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
       const newEntry: CenterCardEntry = {
         cards: curr.topPlay.cards,
         playerId: curr.topPlayerId!,
@@ -770,19 +877,104 @@ export function GameTablePrototype() {
       });
     }
 
-    // Trick ended — clear the table
+    // Trick ended (topPlay went non-null → null)
     if (curr.topPlay === null && prev.topPlay !== null) {
-      centerCurrentRef.current = null;
       passTimersRef.current.forEach(clearTimeout);
       passTimersRef.current.clear();
-      queueMicrotask(() => {
-        setCenterCurrent(null);
-        setCenterPrev(null);
-        setVisiblePassers(new Set());
-      });
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
+
+      // Distinguish 8-stop vs pass-win: prevActivePlayer played cards in 8-stop
+      if (handShrank(prevActivePlayer)) {
+        const playedCards = getPlayedCards(prevActivePlayer);
+        const entry8: CenterCardEntry = {
+          cards: playedCards,
+          playerId: prevActivePlayer,
+          animKey: ++animKeyRef.current,
+        };
+        const prevEntry: CenterPrevEntry = {
+          cards: prev.topPlay.cards,
+          playerId: prev.topPlayerId!,
+        };
+        centerCurrentRef.current = entry8;
+        queueMicrotask(() => {
+          setCenterPrev(prevEntry);
+          setCenterCurrent(entry8);
+        });
+        eightStopClearTimerRef.current = setTimeout(() => {
+          centerCurrentRef.current = null;
+          eightStopClearTimerRef.current = null;
+          queueMicrotask(() => {
+            setCenterCurrent(null);
+            setCenterPrev(null);
+            setVisiblePassers(new Set());
+          });
+        }, 1500);
+      } else {
+        // Ended by passes — clear table and flash the last passer (bot only)
+        centerCurrentRef.current = null;
+        queueMicrotask(() => {
+          setCenterCurrent(null);
+          setCenterPrev(null);
+          setVisiblePassers(new Set());
+        });
+        if (prevActivePlayer !== HUMAN_ID) {
+          const existing = passTimersRef.current.get(prevActivePlayer);
+          if (existing) clearTimeout(existing);
+          queueMicrotask(() => {
+            setVisiblePassers((s) => new Set([...s, prevActivePlayer]));
+          });
+          const t = setTimeout(() => {
+            setVisiblePassers((s) => {
+              const next = new Set(s);
+              next.delete(prevActivePlayer);
+              return next;
+            });
+            passTimersRef.current.delete(prevActivePlayer);
+          }, 1000);
+          passTimersRef.current.set(prevActivePlayer, t);
+        }
+      }
     }
 
-    // New passers since last state
+    // 8-stop on an empty table (8 was the very first card of a trick)
+    // Guard against trade-phase hand changes triggering this falsely
+    if (
+      gameState.phase === RoundPhase.Play &&
+      curr.topPlay === null &&
+      prev.topPlay === null &&
+      handShrank(prevActivePlayer)
+    ) {
+      passTimersRef.current.forEach(clearTimeout);
+      passTimersRef.current.clear();
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
+      const playedCards = getPlayedCards(prevActivePlayer);
+      const entry8: CenterCardEntry = {
+        cards: playedCards,
+        playerId: prevActivePlayer,
+        animKey: ++animKeyRef.current,
+      };
+      centerCurrentRef.current = entry8;
+      queueMicrotask(() => {
+        setCenterPrev(null);
+        setCenterCurrent(entry8);
+      });
+      eightStopClearTimerRef.current = setTimeout(() => {
+        centerCurrentRef.current = null;
+        eightStopClearTimerRef.current = null;
+        queueMicrotask(() => {
+          setCenterCurrent(null);
+          setVisiblePassers(new Set());
+        });
+      }, 1500);
+    }
+
+    // New mid-trick passers (not the last passer — last passer is handled above)
     const prevPassed = new Set(prev.passedPlayerIds);
     const newPassers = curr.passedPlayerIds.filter((id) => !prevPassed.has(id));
     for (const pid of newPassers) {
