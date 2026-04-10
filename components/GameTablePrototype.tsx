@@ -15,7 +15,9 @@ import { chooseBotPlay } from "@/lib/game/bots";
 import {
   canPass,
   formatScores,
+  playerLabel,
 } from "@/lib/game/cli-helpers";
+import { getMatchWinner } from "@/lib/game/scoring";
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/validation";
@@ -757,6 +759,25 @@ export function GameTablePrototype() {
     clearCenterState();
   }, [clearCenterState]);
 
+  const handleNextRound = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "startRound" }, shuffleDeck);
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      queueMicrotask(() => {
+        clearCenterState();
+        setDealId((n) => n + 1);
+        setDealingStackProgress(0);
+        setTablePhase("dealing");
+      });
+      return r.state;
+    });
+  }, [clearCenterState]);
+
   const onPlayerDealComplete = useCallback(() => {
     setTablePhase("playing");
   }, []);
@@ -1150,17 +1171,59 @@ export function GameTablePrototype() {
       {tablePhase === "roundOver" && gameState && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
           <div className="mx-4 flex max-w-md flex-col items-center gap-4 rounded-2xl bg-emerald-950/90 px-8 py-6 text-center shadow-xl ring-1 ring-emerald-500/30">
-            <h2 className="text-lg font-semibold text-emerald-50">Round complete</h2>
-            <p className="text-sm leading-relaxed text-emerald-100/90">
-              {formatScores(gameState.scores)}
-            </p>
-            <button
-              type="button"
-              onClick={resetGame}
-              className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
-            >
-              Reset
-            </button>
+            {gameState.matchFinished ? (
+              <>
+                <h2 className="text-lg font-semibold text-emerald-50">Match Over</h2>
+                <p className="text-base font-medium text-yellow-300">
+                  {playerLabel(getMatchWinner(gameState.scores))} wins!
+                </p>
+                <p className="text-sm leading-relaxed text-emerald-100/90">
+                  {formatScores(gameState.scores)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { resetGame(); startGame(); }}
+                  className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
+                >
+                  Play again
+                </button>
+                <button
+                  type="button"
+                  onClick={resetGame}
+                  className="rounded-full bg-emerald-800 px-8 py-2 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98]"
+                >
+                  Back to menu
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-semibold text-emerald-50">
+                  Round {gameState.roundNumber - 1} complete
+                </h2>
+                <p className="text-sm leading-relaxed text-emerald-100/90">
+                  {formatScores(gameState.scores)}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleNextRound}
+                    className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
+                  >
+                    Next round
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetGame}
+                    className="rounded-full bg-emerald-800 px-8 py-2 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98]"
+                  >
+                    Reset
+                  </button>
+                </div>
+                {playError && (
+                  <p className="text-xs text-red-300">{playError}</p>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
