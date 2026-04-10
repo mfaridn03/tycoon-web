@@ -449,7 +449,7 @@ describe("round ending", () => {
         if (!r1.ok) throw new Error(r1.reason);
 
         // Simulate state where 3 players finished and last one has 1 card
-        let s: GameState = {
+        const s: GameState = {
             ...r1.state,
             activePlayerId: 3,
             hands: [[], [], [], [new Card("2", "S")]],
