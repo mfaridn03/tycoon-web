@@ -2,9 +2,12 @@ import type { Rank, Suit } from "@/lib/game/types";
 import { SUIT_META, SUIT_PATHS, cardLabel } from "./suit-metadata";
 import { CardBack } from "./CardBack";
 
+export type SuitRenderMode = "svg" | "text";
+
 interface PlayingCardProps {
   rank: Rank;
   suit: Suit;
+  suitRenderMode?: SuitRenderMode;
   selected?: boolean;
   faceDown?: boolean;
   disabled?: boolean;
@@ -13,7 +16,17 @@ interface PlayingCardProps {
 
 const FACE_RANKS = new Set<Rank>(["J", "Q", "K"]);
 
-function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string }) {
+function CornerIndex({
+  rank,
+  suit,
+  hex,
+  suitRenderMode,
+}: {
+  rank: Rank;
+  suit: Suit;
+  hex: string;
+  suitRenderMode: SuitRenderMode;
+}) {
   return (
     <g>
       <text
@@ -27,18 +40,38 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
       >
         {rank}
       </text>
-      {/* Suit icon: 100×100 path scaled to ~10px */}
-      <path
-        d={SUIT_PATHS[suit]}
-        fill={hex}
-        transform="translate(4.5 16) scale(0.1)"
-      />
+      {suitRenderMode === "text" ? (
+        <text
+          x="5"
+          y="24"
+          fontSize="10"
+          fontWeight="700"
+          fill={hex}
+          fontFamily="system-ui, -apple-system, sans-serif"
+        >
+          {SUIT_META[suit].symbol}
+        </text>
+      ) : (
+        <path
+          d={SUIT_PATHS[suit]}
+          fill={hex}
+          transform="translate(4.5 16) scale(0.1)"
+        />
+      )}
     </g>
   );
 }
 
-function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
-  const { hex } = SUIT_META[suit];
+function CardFace({
+  rank,
+  suit,
+  suitRenderMode,
+}: {
+  rank: Rank;
+  suit: Suit;
+  suitRenderMode: SuitRenderMode;
+}) {
+  const { hex, symbol } = SUIT_META[suit];
   const isFace = FACE_RANKS.has(rank);
 
   return (
@@ -56,20 +89,32 @@ function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
       />
 
       {/* Top-left corner index */}
-      <CornerIndex rank={rank} suit={suit} hex={hex} />
+      <CornerIndex rank={rank} suit={suit} hex={hex} suitRenderMode={suitRenderMode} />
 
       {/* Bottom-right corner index — rotated 180° around card center */}
       <g transform="rotate(180 40 56)">
-        <CornerIndex rank={rank} suit={suit} hex={hex} />
+        <CornerIndex rank={rank} suit={suit} hex={hex} suitRenderMode={suitRenderMode} />
       </g>
 
       {/* Center content */}
       {isFace ? (
-        <>
-          {/* Large rank letter */}
           <text
             x="40"
-            y="62"
+            y="58"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={suitRenderMode === "text" ? "28" : "30"}
+            fontWeight="700"
+            fill={hex}
+            fontFamily="system-ui, -apple-system, sans-serif"
+          >
+            {`${rank}${symbol}`}
+          </text>
+      ) : (
+        suitRenderMode === "text" ? (
+          <text
+            x="40"
+            y="58"
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize="34"
@@ -77,22 +122,15 @@ function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
             fill={hex}
             fontFamily="system-ui, -apple-system, sans-serif"
           >
-            {rank}
+            {symbol}
           </text>
-          {/* Small suit icon below rank letter: ~16px centered */}
+        ) : (
           <path
             d={SUIT_PATHS[suit]}
             fill={hex}
-            transform="translate(32 72) scale(0.16)"
+            transform="translate(19 35) scale(0.42)"
           />
-        </>
-      ) : (
-        /* Large centered suit icon: ~42px */
-        <path
-          d={SUIT_PATHS[suit]}
-          fill={hex}
-          transform="translate(19 35) scale(0.42)"
-        />
+        )
       )}
     </>
   );
@@ -101,6 +139,7 @@ function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
 export function PlayingCard({
   rank,
   suit,
+  suitRenderMode = "svg",
   selected = false,
   faceDown = false,
   disabled = false,
@@ -142,7 +181,7 @@ export function PlayingCard({
         style={{ display: "block", width: "100%", height: "100%" }}
         xmlns="http://www.w3.org/2000/svg"
       >
-        <CardFace rank={rank} suit={suit} />
+        <CardFace rank={rank} suit={suit} suitRenderMode={suitRenderMode} />
       </svg>
     </div>
   );
