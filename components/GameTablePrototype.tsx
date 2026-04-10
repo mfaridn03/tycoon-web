@@ -63,17 +63,25 @@ function BotHandStrip({
     const scx = sr.left + sr.width / 2;
     const scy = sr.top + sr.height / 2;
 
+    // Viewport-space offsets must be rotated into local (parent-rotated) space
+    // so that CSS translate() lands the card at the stack position.
+    const rad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
     const offsets = slotRefs.current.map((el) => {
       if (!el) return { x: 0, y: 0 };
       const r = el.getBoundingClientRect();
+      const vx = scx - (r.left + r.width / 2);
+      const vy = scy - (r.top + r.height / 2);
       return {
-        x: scx - (r.left + r.width / 2),
-        y: scy - (r.top + r.height / 2),
+        x: vx * cos + vy * sin,
+        y: -vx * sin + vy * cos,
       };
     });
     setFlyOffsets(offsets);
     setDealPhase("atStack");
-  }, [dealPhase, cards, stackRef]);
+  }, [dealPhase, cards, stackRef, rotationDeg]);
 
   useEffect(() => {
     if (dealPhase !== "atStack") return;
