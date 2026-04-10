@@ -64,9 +64,9 @@ const HUMAN_ID = 0 as PlayerId;
 
 const TABLE_PLAYER_NAMES: Record<PlayerId, string> = {
   0: "You",
-  1: "Bot A",
-  2: "Bot B",
-  3: "Bot C",
+  1: "Bot B",
+  2: "Bot C",
+  3: "Bot D",
 };
 
 function playersByScoreDesc(
@@ -172,7 +172,7 @@ function BotHandStrip({
   stackRef: RefObject<HTMLDivElement | null>;
   cards: Card[];
   botName: string;
-  /** Lowercase rank from previous round, e.g. "tycoon" — shown as "Bot A (tycoon)". */
+  /** Lowercase rank from previous round, e.g. "tycoon" — shown as "Bot B (tycoon)". */
   rankSuffix?: string | null;
   rotationDeg: number;
   showPass: boolean;
@@ -184,7 +184,8 @@ function BotHandStrip({
     return "done";
   });
   const labelShiftX =
-    rotationDeg === 90 ? 20 : rotationDeg === -90 ? -20 : 0;
+    rotationDeg === 90 ? 50 : rotationDeg === -90 ? -50 : 0;
+  const labelShiftY = rotationDeg === 180 ? 20 : 0;
   const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>([]);
   const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -337,7 +338,10 @@ function BotHandStrip({
           }}
           className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
         >
-          <div style={{ transform: `translateX(${labelShiftX}px)` }} className="flex flex-col items-center gap-1">
+          <div
+            style={{ transform: `translate(${labelShiftX}px, ${labelShiftY}px)` }}
+            className="flex flex-col items-center gap-1"
+          >
             <div
               className="text-xs font-semibold leading-none"
               style={{ color: isFlashing ? "#f87171" : "#d1fae5", transition: "color 200ms ease" }}
@@ -1205,7 +1209,7 @@ export function GameTablePrototype() {
                 key={`bot-top-${dealId}`}
                 stackRef={stackRef}
                 cards={botTop}
-                botName="Bot B"
+                botName="Bot C"
                 rankSuffix={rankSuffix(2 as PlayerId)}
                 rotationDeg={180}
                 showPass={visiblePassers.has(2 as PlayerId)}
@@ -1220,7 +1224,7 @@ export function GameTablePrototype() {
                 key={`bot-left-${dealId}`}
                 stackRef={stackRef}
                 cards={botLeft}
-                botName="Bot A"
+                botName="Bot B"
                 rankSuffix={rankSuffix(1 as PlayerId)}
                 rotationDeg={90}
                 showPass={visiblePassers.has(1 as PlayerId)}
@@ -1267,7 +1271,7 @@ export function GameTablePrototype() {
                 key={`bot-right-${dealId}`}
                 stackRef={stackRef}
                 cards={botRight}
-                botName="Bot C"
+                botName="Bot D"
                 rankSuffix={rankSuffix(3 as PlayerId)}
                 rotationDeg={-90}
                 showPass={visiblePassers.has(3 as PlayerId)}
