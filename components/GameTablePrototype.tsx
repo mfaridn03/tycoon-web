@@ -25,6 +25,17 @@ import { RoundPhase } from "@/lib/game/types";
 const STACK_CARD_W = 96;
 const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));
 
+const PLAY_CARD_W = 72;
+const PLAY_CARD_H = Math.round(PLAY_CARD_W * (112 / 80));
+
+// dx/dy offsets (px) from center of the play area container
+const PLAY_ZONE_OFFSETS: Record<number, [number, number]> = {
+  0: [0, 72],    // human — below center
+  1: [-110, 0],  // bot-left — left of center
+  2: [0, -72],   // bot-top — above center
+  3: [110, 0],   // bot-right — right of center
+};
+
 const BOT_CARD_W = 32;
 const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
 const BOT_OVERLAP = 24;
@@ -37,13 +48,6 @@ const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
 const PLAY_FLY_DURATION = 280;
 
 const HUMAN_ID = 0 as PlayerId;
-
-const PLAYER_LABELS: Record<number, string> = {
-  0: "You",
-  1: "Bot A",
-  2: "Bot B",
-  3: "Bot C",
-};
 
 // Fly-in origin per player: card slides from their table edge to center
 const PLAY_ORIGINS: Record<number, string> = {
@@ -131,12 +135,14 @@ function BotHandStrip({
   cards,
   botName,
   rotationDeg,
+  showPass,
   className,
 }: {
   stackRef: RefObject<HTMLDivElement | null>;
   cards: Card[];
   botName: string;
   rotationDeg: number;
+  showPass: boolean;
   className?: string;
 }) {
   const [dealPhase, setDealPhase] = useState<BotDealPhase>(() => {
@@ -252,13 +258,18 @@ function BotHandStrip({
           }}
           className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
         >
-          <div style={{ transform: `translateX(${labelShiftX}px)` }}>
+          <div style={{ transform: `translateX(${labelShiftX}px)` }} className="flex flex-col items-center gap-1">
             <div className="text-xs font-semibold leading-none text-emerald-100">
               {botName}
             </div>
             <div className="text-[11px] leading-none text-emerald-200/80">
               {cards.length} cards
             </div>
+            {showPass && (
+              <div className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold uppercase tracking-widest text-white shadow">
+                Pass
+              </div>
+            )}
           </div>
         </div>
 
@@ -294,28 +305,32 @@ function BotHandStrip({
 }
 
 // ---------------------------------------------------------------------------
-// Face-up card (SVG, no interaction)
+// Face-up cards (SVG row, no interaction)
 // ---------------------------------------------------------------------------
 
-function FaceUpCard({ cards }: { cards: Card[] }) {
-  const card = cards[0];
+function FaceUpCards({ cards }: { cards: Card[] }) {
   return (
-    <svg
-      viewBox="0 0 80 112"
-      width={STACK_CARD_W}
-      height={STACK_CARD_H}
-      style={{ display: "block" }}
-    >
-      <CardFaceContent rank={card.rank} suit={card.suit} />
-    </svg>
+    <div style={{ display: "flex", gap: 4 }}>
+      {cards.map((card, i) => (
+        <svg
+          key={i}
+          viewBox="0 0 80 112"
+          width={PLAY_CARD_W}
+          height={PLAY_CARD_H}
+          style={{ display: "block", flexShrink: 0 }}
+        >
+          <CardFaceContent rank={card.rank} suit={card.suit} />
+        </svg>
+      ))}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// AnimatedPlayedCard — slides in from the playing player's direction
+// AnimatedPlayedCards — whole card row slides in from player's direction
 // ---------------------------------------------------------------------------
 
-function AnimatedPlayedCard({
+function AnimatedPlayedCards({
   cards,
   playerId,
 }: {
@@ -344,9 +359,6 @@ function AnimatedPlayedCard({
   const origin = PLAY_ORIGINS[playerId] ?? "translateY(60px)";
 
   const style: CSSProperties = {
-    position: "absolute",
-    inset: 0,
-    zIndex: 2,
     transform: phase === "initial" ? origin : "translate(0,0)",
     opacity: phase === "initial" ? 0 : 1,
     transition:
@@ -358,76 +370,89 @@ function AnimatedPlayedCard({
 
   return (
     <div style={style}>
-      <FaceUpCard cards={cards} />
+      <FaceUpCards cards={cards} />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// CenterPlayArea — trick cards + pass indicators
+// PlayerPlayZone — prev (greyed, peeking above) + current (animated) per slot
 // ---------------------------------------------------------------------------
 
-function CenterPlayArea({
+function PlayerPlayZone({
+  playerId,
   current,
   prev,
-  visiblePassers,
 }: {
+  playerId: PlayerId;
   current: CenterCardEntry | null;
   prev: CenterPrevEntry | null;
-  visiblePassers: Set<PlayerId>;
 }) {
-  const hasCards = current !== null || prev !== null;
+  const showCurrent = current?.playerId === playerId;
+  const showPrev = prev?.playerId === playerId;
+
+  if (!showCurrent && !showPrev) return null;
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      {hasCards && (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      {showPrev && (
         <div
-          className="relative"
-          style={{ width: STACK_CARD_W, height: STACK_CARD_H }}
+          style={{
+            position: "relative",
+            zIndex: 1,
+            transform: "scale(0.88)",
+            transformOrigin: "bottom center",
+            opacity: 0.38,
+            filter: "grayscale(65%)",
+            marginBottom: -(PLAY_CARD_H * 0.45),
+          }}
         >
-          {/* Previous play — offset slightly and greyed out */}
-          {prev && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                zIndex: 1,
-                transform: "translate(4px, 4px)",
-                opacity: 0.35,
-                filter: "grayscale(70%)",
-              }}
-            >
-              <FaceUpCard cards={prev.cards} />
-            </div>
-          )}
-
-          {/* Current play — animated in */}
-          {current && (
-            <AnimatedPlayedCard
-              key={current.animKey}
-              cards={current.cards}
-              playerId={current.playerId}
-            />
-          )}
+          <FaceUpCards cards={prev!.cards} />
         </div>
       )}
-
-      {/* Pass indicator badges */}
-      {visiblePassers.size > 0 && (
-        <div className="flex flex-wrap justify-center gap-1">
-          {([0, 1, 2, 3] as PlayerId[]).map((pid) =>
-            visiblePassers.has(pid) ? (
-              <span
-                key={pid}
-                className="rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow"
-              >
-                {PLAYER_LABELS[pid]} pass
-              </span>
-            ) : null,
-          )}
+      {showCurrent && (
+        <div style={{ position: "relative", zIndex: 2 }}>
+          <AnimatedPlayedCards
+            key={current!.animKey}
+            cards={current!.cards}
+            playerId={playerId}
+          />
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AllPlayZones — four dedicated card-play areas, one per player
+// ---------------------------------------------------------------------------
+
+function AllPlayZones({
+  current,
+  prev,
+}: {
+  current: CenterCardEntry | null;
+  prev: CenterPrevEntry | null;
+}) {
+  return (
+    <>
+      {([0, 1, 2, 3] as PlayerId[]).map((pid) => {
+        const [dx, dy] = PLAY_ZONE_OFFSETS[pid];
+        return (
+          <div
+            key={pid}
+            style={{
+              position: "absolute",
+              left: `calc(50% + ${dx}px)`,
+              top: `calc(50% + ${dy}px)`,
+              transform: "translate(-50%, -50%)",
+            }}
+          >
+            <PlayerPlayZone playerId={pid} current={current} prev={prev} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -616,7 +641,7 @@ export function GameTablePrototype() {
           return next;
         });
         passTimersRef.current.delete(pid);
-      }, 1500);
+      }, 1000);
       passTimersRef.current.set(pid, t);
     }
   }, [gameState]);
@@ -691,6 +716,7 @@ export function GameTablePrototype() {
                 cards={botTop}
                 botName="Bot B"
                 rotationDeg={180}
+                showPass={visiblePassers.has(2 as PlayerId)}
                 className=""
               />
             </div>
@@ -704,24 +730,21 @@ export function GameTablePrototype() {
                 cards={botLeft}
                 botName="Bot A"
                 rotationDeg={90}
+                showPass={visiblePassers.has(1 as PlayerId)}
                 className="justify-self-start pl-1"
               />
             )}
 
             {/* Center area */}
-            <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-1">
+            <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-1">
               {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
               {showTable && tablePhase !== "playing" && tablePhase !== "roundOver" && (
                 <CenterStack stackRef={stackRef} progress={stackProgress} />
               )}
 
-              {/* Played cards + pass indicators */}
+              {/* Four dedicated play zones */}
               {tablePhase === "playing" && (
-                <CenterPlayArea
-                  current={centerCurrent}
-                  prev={centerPrev}
-                  visiblePassers={visiblePassers}
-                />
+                <AllPlayZones current={centerCurrent} prev={centerPrev} />
               )}
             </div>
 
@@ -732,6 +755,7 @@ export function GameTablePrototype() {
                 cards={botRight}
                 botName="Bot C"
                 rotationDeg={-90}
+                showPass={visiblePassers.has(3 as PlayerId)}
                 className="justify-self-end pr-1"
               />
             )}
@@ -740,6 +764,13 @@ export function GameTablePrototype() {
           {/* Player */}
           {showTable && hands && (
             <div className="mt-auto w-full pb-4 pt-2">
+              {visiblePassers.has(HUMAN_ID) && (
+                <div className="mb-2 flex justify-center">
+                  <div className="rounded-full bg-red-600 px-3 py-1 text-sm font-bold uppercase tracking-widest text-white shadow">
+                    Pass
+                  </div>
+                </div>
+              )}
               <CardDemo
                 key={dealId}
                 variant="embedded"
