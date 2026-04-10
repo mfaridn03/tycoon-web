@@ -1,13 +1,10 @@
 import type { Rank, Suit } from "@/lib/game/types";
-import { SUIT_META, SUIT_PATHS, cardLabel } from "./suit-metadata";
+import { SUIT_META, cardLabel } from "./suit-metadata";
 import { CardBack } from "./CardBack";
-
-export type SuitRenderMode = "svg" | "text";
 
 interface PlayingCardProps {
   rank: Rank;
   suit: Suit;
-  suitRenderMode?: SuitRenderMode;
   selected?: boolean;
   faceDown?: boolean;
   disabled?: boolean;
@@ -16,17 +13,7 @@ interface PlayingCardProps {
 
 const FACE_RANKS = new Set<Rank>(["J", "Q", "K"]);
 
-function CornerIndex({
-  rank,
-  suit,
-  hex,
-  suitRenderMode,
-}: {
-  rank: Rank;
-  suit: Suit;
-  hex: string;
-  suitRenderMode: SuitRenderMode;
-}) {
+function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string }) {
   return (
     <g>
       <text
@@ -40,43 +27,26 @@ function CornerIndex({
       >
         {rank}
       </text>
-      {suitRenderMode === "text" ? (
-        <text
-          x="5"
-          y="24"
-          fontSize="10"
-          fontWeight="700"
-          fill={hex}
-          fontFamily="system-ui, -apple-system, sans-serif"
-        >
-          {SUIT_META[suit].symbol}
-        </text>
-      ) : (
-        <path
-          d={SUIT_PATHS[suit]}
-          fill={hex}
-          transform="translate(4.5 16) scale(0.1)"
-        />
-      )}
+      <text
+        x="5"
+        y="24"
+        fontSize="10"
+        fontWeight="700"
+        fill={hex}
+        fontFamily="system-ui, -apple-system, sans-serif"
+      >
+        {SUIT_META[suit].symbol}
+      </text>
     </g>
   );
 }
 
-function CardFace({
-  rank,
-  suit,
-  suitRenderMode,
-}: {
-  rank: Rank;
-  suit: Suit;
-  suitRenderMode: SuitRenderMode;
-}) {
+function CardFace({ rank, suit }: { rank: Rank; suit: Suit }) {
   const { hex, symbol } = SUIT_META[suit];
   const isFace = FACE_RANKS.has(rank);
 
   return (
     <>
-      {/* Card background */}
       <rect
         x="0.5"
         y="0.5"
@@ -88,50 +58,24 @@ function CardFace({
         strokeWidth="1"
       />
 
-      {/* Top-left corner index */}
-      <CornerIndex rank={rank} suit={suit} hex={hex} suitRenderMode={suitRenderMode} />
+      <CornerIndex rank={rank} suit={suit} hex={hex} />
 
-      {/* Bottom-right corner index — rotated 180° around card center */}
       <g transform="rotate(180 40 56)">
-        <CornerIndex rank={rank} suit={suit} hex={hex} suitRenderMode={suitRenderMode} />
+        <CornerIndex rank={rank} suit={suit} hex={hex} />
       </g>
 
-      {/* Center content */}
-      {isFace ? (
-          <text
-            x="40"
-            y="58"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize={suitRenderMode === "text" ? "28" : "30"}
-            fontWeight="700"
-            fill={hex}
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {`${rank}${symbol}`}
-          </text>
-      ) : (
-        suitRenderMode === "text" ? (
-          <text
-            x="40"
-            y="58"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize="34"
-            fontWeight="700"
-            fill={hex}
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {symbol}
-          </text>
-        ) : (
-          <path
-            d={SUIT_PATHS[suit]}
-            fill={hex}
-            transform="translate(19 35) scale(0.42)"
-          />
-        )
-      )}
+      <text
+        x="40"
+        y="58"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize={isFace ? "28" : "34"}
+        fontWeight="700"
+        fill={hex}
+        fontFamily="system-ui, -apple-system, sans-serif"
+      >
+        {isFace ? `${rank}${symbol}` : symbol}
+      </text>
     </>
   );
 }
@@ -139,7 +83,6 @@ function CardFace({
 export function PlayingCard({
   rank,
   suit,
-  suitRenderMode = "svg",
   selected = false,
   faceDown = false,
   disabled = false,
@@ -181,7 +124,7 @@ export function PlayingCard({
         style={{ display: "block", width: "100%", height: "100%" }}
         xmlns="http://www.w3.org/2000/svg"
       >
-        <CardFace rank={rank} suit={suit} suitRenderMode={suitRenderMode} />
+        <CardFace rank={rank} suit={suit} />
       </svg>
     </div>
   );

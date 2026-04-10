@@ -1,24 +1,22 @@
 import type { Suit } from "@/lib/game/types";
-import { SUIT_META, SUIT_PATHS } from "./suit-metadata";
+import { SUIT_META } from "./suit-metadata";
 
 interface SuitIconProps {
   suit: Suit;
-  /** Rendered width and height in pixels. Defaults to 16. */
+  /** Font size in pixels. Defaults to 16. */
   size?: number;
   className?: string;
 }
 
 export function SuitIcon({ suit, size = 16, className }: SuitIconProps) {
-  const { hex, label } = SUIT_META[suit];
+  const { hex, label, symbol } = SUIT_META[suit];
   return (
-    <svg
-      viewBox="0 0 100 100"
-      width={size}
-      height={size}
+    <span
       className={className}
       aria-label={label}
+      style={{ color: hex, fontSize: size, lineHeight: 1 }}
     >
-      <path d={SUIT_PATHS[suit]} fill={hex} />
-    </svg>
+      {symbol}
+    </span>
   );
 }
