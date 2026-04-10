@@ -14,6 +14,7 @@ import {
     canPass,
     formatCards,
     formatEvent,
+    formatHandSizes,
     formatScores,
     formatTradeRequirement,
     formatTrickHistoryEntry,
@@ -91,9 +92,9 @@ function renderPlayScreen(
     const passAllowed = canPass(state);
 
     clearScreenIfInteractive();
+    console.log(`Scores: ${formatScores(state.scores)}\n`);
+    console.log(formatHandSizes(state.hands));
     printSeparator();
-    console.log(`Scores: ${formatScores(state.scores)}`);
-
     for (const entry of trickHistory) {
         console.log(
             formatTrickHistoryEntry(entry, isCurrentTopHistoryEntry(state, entry)),
@@ -113,6 +114,8 @@ function renderPlayScreen(
     for (const opt of options) {
         console.log(`  ${opt.index}) ${opt.label}`);
     }
+
+    printSeparator();
 
     return { options, passAllowed };
 }

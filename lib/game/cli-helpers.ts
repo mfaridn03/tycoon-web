@@ -140,6 +140,12 @@ export function formatScores(scores: [number, number, number, number]): string {
         .join("  |  ");
 }
 
+export function formatHandSizes(hands: [Card[], Card[], Card[], Card[]]) {
+    return ([0, 1, 2, 3] as PlayerId[])
+        .map((id) => `${playerLabel(id)} hand size: ${hands[id].length}`)
+        .join("\n");
+}
+
 export function formatTradeRequirement(
     giverId: PlayerId,
     receiverId: PlayerId,
