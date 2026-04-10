@@ -106,6 +106,7 @@ export function CardDemo() {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
   );
+  const lastChoiceKeyRef = useRef<ChoiceKey | null>(null);
   const [choiceSequences, setChoiceSequences] = useState<{
     single: number[][];
     pair: number[][];
@@ -136,6 +137,7 @@ export function CardDemo() {
     cardSlotsRef.current = [];
     setSelectedIndices(new Set());
     setChoiceCursors(INITIAL_CURSORS);
+    lastChoiceKeyRef.current = null;
 
     const deck = shuffleDeck(createDeck());
     const cards = sortCards(deck.slice(0, HAND_SIZE));
@@ -148,19 +150,31 @@ export function CardDemo() {
   function pickNextChoice(key: ChoiceKey) {
     const list = choiceSequences[key];
     if (list.length === 0) return;
+    const isConsecutive = lastChoiceKeyRef.current === key;
+
+    // Switching buttons: reset all cursors to 0 and pick first combo for this button.
+    if (!isConsecutive) {
+      setChoiceCursors(INITIAL_CURSORS);
+      setSelectedIndices(new Set(list[0]!));
+      lastChoiceKeyRef.current = key;
+      return;
+    }
+
+    // Same button twice in a row: advance that cursor (wrap) and pick new combo.
     setChoiceCursors((prev) => {
-      const i = prev[key];
-      const nextIndex = i % list.length;
-      const indices = list[nextIndex]!;
-      setSelectedIndices(new Set(indices));
-      return { ...prev, [key]: (nextIndex + 1) % list.length };
+      const currentIndex = prev[key] ?? 0;
+      const nextIndex = (currentIndex + 1) % list.length;
+      setSelectedIndices(new Set(list[nextIndex]!));
+      return { ...prev, [key]: nextIndex };
     });
+    lastChoiceKeyRef.current = key;
   }
 
   function clearSelectionAndResetChoices() {
     if (selectedIndices.size === 0) return;
     setSelectedIndices(new Set());
     setChoiceCursors(INITIAL_CURSORS);
+    lastChoiceKeyRef.current = null;
   }
 
   // measuring → compute fly offsets → atStack
@@ -221,6 +235,12 @@ export function CardDemo() {
 
   function toggleSelection(index: number) {
     if (dealPhase !== "done") return;
+    const isCurrentlySelected = selectedIndices.has(index);
+    // Manual unselect -> reset cursors and consecutive tracking.
+    if (isCurrentlySelected) {
+      setChoiceCursors(INITIAL_CURSORS);
+      lastChoiceKeyRef.current = null;
+    }
     setSelectedIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
@@ -378,10 +398,7 @@ export function CardDemo() {
               type="button"
               onClick={() => pickNextChoice("revolution")}
               data-card-demo-interactive="true"
-              disabled={
-                !canUseChoices ||
-                choiceCursors.revolution >= revolutionChoices.length
-              }
+              disabled={!canUseChoices}
               className="px-4 py-2 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Revolution
