@@ -84,6 +84,26 @@ function seededShuffle(seed: number): ShuffleFn {
     };
 }
 
+describe("single round reset semantics", () => {
+    it("fresh createInitialGameState is clean slate after one round", () => {
+        let state = createInitialGameState();
+        const r = startRound(state, seededShuffle(7));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        state = playRound(r.state);
+
+        expect(state.roundNumber).toBe(2);
+        expect(state.phase).toBe(RoundPhase.Deal);
+
+        const fresh = createInitialGameState();
+        expect(fresh.roundNumber).toBe(1);
+        expect(fresh.phase).toBe(RoundPhase.Deal);
+        expect(fresh.scores).toEqual([0, 0, 0, 0]);
+        expect(fresh.matchFinished).toBe(false);
+        expect(fresh.previousRanks).toBeNull();
+    });
+});
+
 describe("single round", () => {
     it("completes round 1 with all players finishing", () => {
         let state = createInitialGameState();

@@ -10,10 +10,17 @@ import {
 } from "react";
 import { CardDemo } from "@/components/CardDemo";
 import { CardBack } from "@/components/cards/CardBack";
-import { createDeck } from "@/lib/game/constants";
-import { dealFourHands } from "@/lib/game/deal-four-hands";
+import { chooseBotPlay } from "@/lib/game/bots";
+import {
+  canPass,
+  formatCards,
+  formatScores,
+  playerLabel,
+} from "@/lib/game/cli-helpers";
+import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
-import type { Card } from "@/lib/game/types";
+import type { Card, GameEvent, GameState, PlayerId } from "@/lib/game/types";
+import { RoundPhase } from "@/lib/game/types";
 
 const STACK_CARD_W = 96;
 const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));
@@ -28,7 +35,9 @@ const FLY_STAGGER = 50;
 const STACK_DEPTH = HAND_SIZE;
 const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
 
-type TablePhase = "pre" | "dealing" | "ready";
+const HUMAN_ID = 0 as PlayerId;
+
+type TablePhase = "pre" | "dealing" | "playing" | "roundOver";
 
 type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
 
@@ -95,9 +104,11 @@ function BotHandStrip({
   rotationDeg: number;
   className?: string;
 }) {
-  const [dealPhase, setDealPhase] = useState<BotDealPhase>(() =>
-    cards.length === HAND_SIZE ? "measuring" : "idle",
-  );
+  const [dealPhase, setDealPhase] = useState<BotDealPhase>(() => {
+    if (cards.length === 0) return "idle";
+    if (cards.length === HAND_SIZE) return "measuring";
+    return "done";
+  });
   const labelShiftX =
     rotationDeg === 90 ? 20 : rotationDeg === -90 ? -20 : 0;
   const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>([]);
@@ -250,34 +261,110 @@ function BotHandStrip({
 export function GameTablePrototype() {
   const stackRef = useRef<HTMLDivElement>(null);
   const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
-  const [hands, setHands] = useState<Card[][] | null>(null);
+  const [gameState, setGameState] = useState<GameState | null>(null);
   const [dealId, setDealId] = useState(0);
-  const [stackProgress, setStackProgress] = useState(0);
+  /** 0–1 while dealing; ignored when not dealing (see `stackProgress`). */
+  const [dealingStackProgress, setDealingStackProgress] = useState(0);
+  const [playError, setPlayError] = useState<string | null>(null);
+
+  const stackProgress =
+    tablePhase === "pre"
+      ? 0
+      : tablePhase === "dealing"
+        ? dealingStackProgress
+        : 1;
 
   const startGame = useCallback(() => {
-    const deck = shuffleDeck(createDeck());
-    setHands(dealFourHands(deck));
+    setPlayError(null);
+    const s0 = createInitialGameState();
+    const r = dispatch(s0, { type: "startRound" }, shuffleDeck);
+    if (!r.ok) {
+      setPlayError(r.reason);
+      return;
+    }
+    setGameState(r.state);
     setDealId((n) => n + 1);
-    setStackProgress(0);
+    setDealingStackProgress(0);
     setTablePhase("dealing");
   }, []);
 
+  const resetGame = useCallback(() => {
+    setGameState(null);
+    setPlayError(null);
+    setTablePhase("pre");
+  }, []);
+
   const onPlayerDealComplete = useCallback(() => {
-    setTablePhase("ready");
+    setTablePhase("playing");
+  }, []);
+
+  const handleHumanPlay = useCallback((cards: Card[]) => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "play", playerId: HUMAN_ID, cards });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+        queueMicrotask(() => setTablePhase("roundOver"));
+      }
+      return r.state;
+    });
+  }, []);
+
+  const handlePass = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "pass", playerId: HUMAN_ID });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+        queueMicrotask(() => setTablePhase("roundOver"));
+      }
+      return r.state;
+    });
   }, []);
 
   useEffect(() => {
-    if (tablePhase !== "dealing") {
-      setStackProgress(tablePhase === "ready" ? 1 : 0);
-      return;
-    }
+    if (tablePhase !== "playing" || !gameState) return;
+    if (gameState.phase !== RoundPhase.Play) return;
+    if (gameState.activePlayerId === HUMAN_ID) return;
+
+    const t = setTimeout(() => {
+      setGameState((prev) => {
+        if (!prev || prev.phase !== RoundPhase.Play) return prev;
+        if (prev.activePlayerId === HUMAN_ID) return prev;
+        const pid = prev.activePlayerId;
+        const choice = chooseBotPlay(prev, pid);
+        const action =
+          choice.type === "pass"
+            ? { type: "pass" as const, playerId: pid }
+            : { type: "play" as const, playerId: pid, cards: choice.cards };
+        const r = dispatch(prev, action);
+        if (!r.ok) return prev;
+        if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+          queueMicrotask(() => setTablePhase("roundOver"));
+        }
+        return r.state;
+      });
+    }, 320);
+    return () => clearTimeout(t);
+  }, [gameState, tablePhase]);
+
+  useEffect(() => {
+    if (tablePhase !== "dealing") return;
 
     let rafId = 0;
     const startedAt = performance.now();
 
     const tick = (now: number) => {
       const next = Math.min(1, (now - startedAt) / DEAL_DURATION);
-      setStackProgress(next);
+      setDealingStackProgress(next);
       if (next < 1) {
         rafId = requestAnimationFrame(tick);
       }
@@ -288,7 +375,20 @@ export function GameTablePrototype() {
   }, [tablePhase, dealId]);
 
   const showTable = tablePhase !== "pre";
+  const hands = gameState?.hands ?? null;
   const [, botLeft, botTop, botRight] = hands ?? [[], [], [], []];
+
+  const playMode =
+    tablePhase === "playing" &&
+    gameState?.phase === RoundPhase.Play &&
+    gameState.activePlayerId === HUMAN_ID
+      ? {
+          canPass: canPass(gameState),
+          onPlay: handleHumanPlay,
+          onPass: handlePass,
+          playError,
+        }
+      : null;
 
   return (
     <div className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950">
@@ -333,9 +433,24 @@ export function GameTablePrototype() {
             )}
 
             {/* Center stack + felt */}
-            <div className="flex min-h-[140px] flex-col items-center justify-center gap-2">
+            <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-1">
               {showTable && (
-              <CenterStack stackRef={stackRef} progress={stackProgress} />
+                <CenterStack stackRef={stackRef} progress={stackProgress} />
+              )}
+              {tablePhase === "playing" && gameState?.phase === RoundPhase.Play && (
+                <div className="max-w-[min(100%,320px)] text-center text-[11px] leading-snug text-emerald-100/95 sm:text-xs">
+                  <div className="font-medium text-emerald-50">
+                    {playerLabel(gameState.activePlayerId)}&apos;s turn
+                  </div>
+                  {gameState.trick.topPlay ? (
+                    <div className="mt-0.5 text-emerald-200/90">
+                      Top: {formatCards(gameState.trick.topPlay.cards)} (
+                      {playerLabel(gameState.trick.topPlayerId!)})
+                    </div>
+                  ) : (
+                    <div className="mt-0.5 text-emerald-200/90">New trick — play any legal set</div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -360,6 +475,8 @@ export function GameTablePrototype() {
                 externalStackRef={stackRef}
                 playerCards={hands[0]!}
                 onDealComplete={onPlayerDealComplete}
+                gameHandSync={tablePhase === "playing"}
+                playMode={playMode}
                 className="flex w-full flex-col items-center gap-3"
               />
             </div>
@@ -369,13 +486,36 @@ export function GameTablePrototype() {
 
       {tablePhase === "pre" && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
-          <button
-            type="button"
-            onClick={startGame}
-            className="rounded-full bg-white px-10 py-3 text-base font-semibold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
-          >
-            Start Game
-          </button>
+          <div className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={startGame}
+              className="rounded-full bg-white px-10 py-3 text-base font-semibold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
+            >
+              Start Game
+            </button>
+            {playError ? (
+              <p className="max-w-sm text-center text-sm text-red-200">{playError}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {tablePhase === "roundOver" && gameState && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+          <div className="mx-4 flex max-w-md flex-col items-center gap-4 rounded-2xl bg-emerald-950/90 px-8 py-6 text-center shadow-xl ring-1 ring-emerald-500/30">
+            <h2 className="text-lg font-semibold text-emerald-50">Round complete</h2>
+            <p className="text-sm leading-relaxed text-emerald-100/90">
+              {formatScores(gameState.scores)}
+            </p>
+            <button
+              type="button"
+              onClick={resetGame}
+              className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
+            >
+              Reset
+            </button>
+          </div>
         </div>
       )}
     </div>

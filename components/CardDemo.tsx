@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useCallback,
   type RefObject,
 } from "react";
 import { createDeck } from "@/lib/game/constants";
@@ -90,6 +91,13 @@ const INITIAL_CURSORS: Record<ChoiceKey, number> = {
   revolution: 0,
 };
 
+export type CardDemoPlayMode = {
+  canPass: boolean;
+  onPlay: (cards: Card[]) => void;
+  onPass: () => void;
+  playError?: string | null;
+};
+
 export type CardDemoProps = {
   variant?: "standalone" | "embedded";
   /** When set, fly animation measures from this stack (parent renders the stack). */
@@ -98,6 +106,10 @@ export type CardDemoProps = {
   playerCards?: Card[] | null;
   className?: string;
   onDealComplete?: () => void;
+  /** After initial deal, sync hand from parent without re-deal animation (shedding). */
+  gameHandSync?: boolean;
+  /** Replaces demo pattern pickers with Pass / Play selected. */
+  playMode?: CardDemoPlayMode | null;
 };
 
 export function CardDemo({
@@ -106,11 +118,15 @@ export function CardDemo({
   playerCards,
   className,
   onDealComplete,
+  gameHandSync = false,
+  playMode = null,
 }: CardDemoProps) {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
   );
+  const selectedIndicesRef = useRef(selectedIndices);
+  selectedIndicesRef.current = selectedIndices;
   const lastChoiceKeyRef = useRef<ChoiceKey | null>(null);
   const [choiceSequences, setChoiceSequences] = useState<{
     single: number[][];
@@ -127,6 +143,7 @@ export function CardDemo({
   );
 
   const internalStackRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const stackRef = externalStackRef ?? internalStackRef;
   const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -168,6 +185,17 @@ export function CardDemo({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- beginDealWithCards closes over fresh deal state
   }, [variant, playerCards]);
 
+  useEffect(() => {
+    if (variant !== "embedded" || !gameHandSync || !playerCards) return;
+    if (dealPhase !== "done") return;
+    const sorted = sortPlayerHand(playerCards);
+    setDrawnCards(sorted);
+    setChoiceSequences(buildChoiceSequences(sorted));
+    setSelectedIndices(new Set());
+    setChoiceCursors(INITIAL_CURSORS);
+    lastChoiceKeyRef.current = null;
+  }, [playerCards, gameHandSync, dealPhase, variant]);
+
   function pickNextChoice(key: ChoiceKey) {
     const list = choiceSequences[key];
     if (list.length === 0) return;
@@ -191,12 +219,24 @@ export function CardDemo({
     lastChoiceKeyRef.current = key;
   }
 
-  function clearSelectionAndResetChoices() {
-    if (selectedIndices.size === 0) return;
+  const clearSelectionAndResetChoices = useCallback(() => {
+    if (selectedIndicesRef.current.size === 0) return;
     setSelectedIndices(new Set());
     setChoiceCursors(INITIAL_CURSORS);
     lastChoiceKeyRef.current = null;
-  }
+  }, []);
+
+  useEffect(() => {
+    function handleDocumentClick(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (rootRef.current?.contains(target)) return;
+      clearSelectionAndResetChoices();
+    }
+
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, [clearSelectionAndResetChoices]);
 
   // measuring → compute fly offsets → atStack
   useEffect(() => {
@@ -326,6 +366,8 @@ export function CardDemo({
 
   const isAnimating = !["idle", "done"].includes(dealPhase);
   const canUseChoices = dealPhase === "done";
+  const showDemoPatternPickers = canUseChoices && !playMode;
+  const showPlayModeBar = canUseChoices && playMode;
   const { single: singleChoices, pair: pairChoices, triple: tripleChoices, revolution: revolutionChoices } =
     choiceSequences;
 
@@ -342,6 +384,7 @@ export function CardDemo({
 
   return (
     <div
+      ref={rootRef}
       className={rootClass}
       onClick={(event) => {
         const target = event.target as HTMLElement | null;
@@ -400,7 +443,7 @@ export function CardDemo({
       )}
 
       {/* Pattern pickers — lowest-first sequences per click (below deck) */}
-      {canUseChoices && (
+      {showDemoPatternPickers && (
         <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-4xl">
           {singleChoices.length > 0 && (
             <button
@@ -457,6 +500,39 @@ export function CardDemo({
         </div>
       )}
 
+      {showPlayModeBar && playMode && (
+        <div className="flex w-full max-w-4xl flex-col items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {playMode.canPass && (
+              <button
+                type="button"
+                onClick={() => playMode.onPass()}
+                data-card-demo-interactive="true"
+                className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-white active:bg-zinc-300"
+              >
+                Pass
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const idxs = [...selectedIndices].sort((a, b) => a - b);
+                const cards = idxs.map((i) => drawnCards[i]!);
+                playMode.onPlay(cards);
+              }}
+              disabled={selectedIndices.size === 0}
+              data-card-demo-interactive="true"
+              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-100 active:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Play selected
+            </button>
+          </div>
+          {playMode.playError ? (
+            <p className="text-center text-xs text-red-300">{playMode.playError}</p>
+          ) : null}
+        </div>
+      )}
+
       {/* Hand */}
       <div
         className="flex items-end justify-center"
@@ -477,7 +553,11 @@ export function CardDemo({
               ref={(el) => {
                 cardSlotsRef.current[i] = el;
               }}
-              onClick={() => toggleSelection(i)}
+              onClick={(event) => {
+                // Prevent root outside-click handler from running when clicking card.
+                event.stopPropagation();
+                toggleSelection(i);
+              }}
               data-card-demo-interactive="true"
               className="cursor-pointer"
               style={{
