@@ -416,7 +416,7 @@ export function GameTablePrototype() {
                 key={`bot-top-${dealId}`}
                 stackRef={stackRef}
                 cards={botTop}
-                botName="Bot Top"
+                botName="Bot B"
                 rotationDeg={180}
                 className=""
               />
@@ -429,7 +429,7 @@ export function GameTablePrototype() {
                 key={`bot-left-${dealId}`}
                 stackRef={stackRef}
                 cards={botLeft}
-                botName="Bot Left"
+                botName="Bot A"
                 rotationDeg={90}
                 className="justify-self-start pl-1"
               />
@@ -462,7 +462,7 @@ export function GameTablePrototype() {
                 key={`bot-right-${dealId}`}
                 stackRef={stackRef}
                 cards={botRight}
-                botName="Bot Right"
+                botName="Bot C"
                 rotationDeg={-90}
                 className="justify-self-end pr-1"
               />
