@@ -7,9 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return (
-    <div className="flex min-h-dvh items-center justify-center bg-zinc-950">
-      <GameTablePrototype />
-    </div>
-  );
+  return <GameTablePrototype />;
 }

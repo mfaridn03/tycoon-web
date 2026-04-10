@@ -18,9 +18,9 @@ import type { Card } from "@/lib/game/types";
 const STACK_CARD_W = 96;
 const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));
 
-const BOT_CARD_W = 52;
+const BOT_CARD_W = 32;
 const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
-const BOT_OVERLAP = 11;
+const BOT_OVERLAP = 24;
 
 const HAND_SIZE = 13;
 const FLY_DURATION = 400;
@@ -183,7 +183,7 @@ export function GameTablePrototype() {
   const [, botLeft, botTop, botRight] = hands ?? [[], [], [], []];
 
   return (
-    <div className="relative min-h-dvh w-full max-w-md mx-auto overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950 shadow-xl shadow-black/40">
+    <div className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950">
       <div
         className={`relative flex min-h-dvh flex-col transition-[filter,opacity] duration-300 ${
           tablePhase === "pre" ? "blur-sm" : ""
@@ -206,7 +206,7 @@ export function GameTablePrototype() {
                 stackRef={stackRef}
                 cards={botTop}
                 rotationDeg={180}
-                className="max-w-[min(100%,320px)]"
+                className=""
               />
             </div>
           )}
