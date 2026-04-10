@@ -145,16 +145,12 @@ export function CardDemo() {
   }
 
   function pickNextChoice(key: ChoiceKey) {
+    const list = choiceSequences[key];
     setChoiceCursors((prev) => {
-      const list = choiceSequences[key];
       const i = prev[key];
       if (i >= list.length) return prev;
       const indices = list[i]!;
-      setSelectedIndices((sel) => {
-        const next = new Set(sel);
-        for (const ix of indices) next.add(ix);
-        return next;
-      });
+      setSelectedIndices(new Set(indices));
       return { ...prev, [key]: i + 1 };
     });
   }
