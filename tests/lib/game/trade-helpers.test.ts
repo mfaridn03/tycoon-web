@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+    buildBotTradeAction,
     Card,
+    getNextPendingTrade,
+    isHumanTradeTurn,
     type GameState,
     type PlayerId,
     PlayerRank,
     RoundPhase,
-} from "../../../lib/game/types";
-import { startTradePhase } from "../../../lib/game/trade";
-import {
-    buildBotTradeAction,
-    getNextPendingTrade,
-    isHumanTradeTurn,
-} from "../../../lib/game/trade/helpers";
+    startTradePhase,
+} from "@/lib/game";
 
 function makeTradeState(): GameState {
     const ranks: Record<PlayerId, PlayerRank> = {
