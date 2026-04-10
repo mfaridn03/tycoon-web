@@ -33,9 +33,10 @@ function shuffleDeck(deck: Card[]): Card[] {
 
 function sortCards(cards: Card[]): Card[] {
   return [...cards].sort((a, b) => {
-    const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
-    if (suitDiff !== 0) return suitDiff;
-    return DEFAULT_RANK_ORDER[a.rank] - DEFAULT_RANK_ORDER[b.rank];
+    // Sort by rank first (matches game/CLI), then suit as deterministic tie-break.
+    const rankDiff = DEFAULT_RANK_ORDER[a.rank] - DEFAULT_RANK_ORDER[b.rank];
+    if (rankDiff !== 0) return rankDiff;
+    return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
   });
 }
 
