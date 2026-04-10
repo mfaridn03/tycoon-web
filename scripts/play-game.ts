@@ -6,12 +6,20 @@ import { createInitialGameState, dispatch } from "../lib/game/engine";
 import { getLegalPlays } from "../lib/game/validation";
 import { getRankOrder, TOTAL_ROUNDS } from "../lib/game/constants";
 import {
+    formatActionLine,
+    formatHandsBlock,
+    formatLogEvent,
+    formatRoleLines,
+    formatTradeLines,
+} from "../lib/game/logging";
+import {
     type ActionResult,
     type Card,
     type GameAction,
     type GameEvent,
     type GameState,
     type PlayerId,
+    PlayerRank,
     RoundPhase,
 } from "../lib/game/types";
 import {
@@ -33,133 +41,93 @@ const rl = readline.createInterface({ input, output });
 const isInteractiveCli = Boolean(input.isTTY && output.isTTY);
 
 const GAME_LOG_PATH =
-    process.env.TYCOON_GAME_LOG ?? path.join(process.cwd(), "game-history.json");
+    process.env.TYCOON_GAME_LOG ?? path.join(process.cwd(), "game-history.log");
 
-type SerializedCard = { rank: Card["rank"]; suit: Card["suit"] };
+const LOG_SEPARATOR = "-".repeat(20);
 
-type SerializedAction =
-    | { type: "startRound" }
-    | { type: "pass"; playerId: PlayerId }
-    | {
-          type: "play" | "completeTrade";
-          playerId: PlayerId;
-          cards: SerializedCard[];
-      };
-
-type SerializedLogEntry = {
-    round: GameState["roundNumber"];
-    phase: GameState["phase"];
-    action: SerializedAction;
-    events: GameEvent[];
-    state: {
-        scores: GameState["scores"];
-        activePlayerId: GameState["activePlayerId"];
-        finishOrder: GameState["finishOrder"];
-        finishedPlayers: GameState["finishedPlayers"];
-        demotedTycoonId: GameState["demotedTycoonId"];
-        revolutionActive: GameState["revolutionActive"];
-        handSizes: number[];
-        trick: {
-            topPlayerId: GameState["trick"]["topPlayerId"];
-            currentPattern: GameState["trick"]["currentPattern"];
-            topPlayCards: SerializedCard[] | null;
-            passedPlayerIds: GameState["trick"]["passedPlayerIds"];
-        };
-    };
-};
-
-type GameLogDocument = {
-    type: "gameSession";
-    startedAt: string;
-    logPath: string;
-    entries: SerializedLogEntry[];
-};
-
-let gameLog: GameLogDocument | null = null;
+let gameLogLines: string[] = [];
 
 function initGameLogFile(): void {
-    gameLog = {
-        type: "gameSession",
-        startedAt: new Date().toISOString(),
-        logPath: GAME_LOG_PATH,
-        entries: [],
-    };
+    gameLogLines = [];
     flushGameLog();
 }
 
 function flushGameLog(): void {
-    if (!gameLog) {
-        throw new Error("Game log not initialized");
-    }
-
-    fs.writeFileSync(GAME_LOG_PATH, `${JSON.stringify(gameLog, null, 2)}\n`, "utf8");
+    const content =
+        gameLogLines.length > 0 ? `${gameLogLines.join("\n")}\n` : "";
+    fs.writeFileSync(GAME_LOG_PATH, content, "utf8");
 }
 
-function serializeCard(card: Card): SerializedCard {
-    return {
-        rank: card.rank,
-        suit: card.suit,
-    };
-}
-
-function serializeAction(action: GameAction): SerializedAction {
-    switch (action.type) {
-        case "play":
-            return {
-                type: action.type,
-                playerId: action.playerId,
-                cards: action.cards.map(serializeCard),
-            };
-        case "completeTrade":
-            return {
-                type: action.type,
-                playerId: action.playerId,
-                cards: action.cards.map(serializeCard),
-            };
-        case "pass":
-            return { type: action.type, playerId: action.playerId };
-        case "startRound":
-            return { type: action.type };
-    }
-}
-
-function serializeState(state: GameState): SerializedLogEntry["state"] {
-    return {
-        scores: [...state.scores],
-        activePlayerId: state.activePlayerId,
-        finishOrder: [...state.finishOrder],
-        finishedPlayers: [...state.finishedPlayers],
-        demotedTycoonId: state.demotedTycoonId,
-        revolutionActive: state.revolutionActive,
-        handSizes: state.hands.map((hand) => hand.length),
-        trick: {
-            topPlayerId: state.trick.topPlayerId,
-            currentPattern: state.trick.currentPattern,
-            topPlayCards: state.trick.topPlay?.cards.map(serializeCard) ?? null,
-            passedPlayerIds: [...state.trick.passedPlayerIds],
-        },
-    };
-}
-
-function appendGameLog(
-    state: GameState,
-    action: GameAction,
-    events: GameEvent[],
-): void {
-    if (!gameLog) {
-        throw new Error("Game log not initialized");
-    }
-
-    const entry: SerializedLogEntry = {
-        round: state.roundNumber,
-        phase: state.phase,
-        action: serializeAction(action),
-        events,
-        state: serializeState(state),
-    };
-
-    gameLog.entries.push(entry);
+function appendGameLogLines(lines: string[]): void {
+    gameLogLines.push(...lines);
     flushGameLog();
+}
+
+function appendBlankLine(): void {
+    if (gameLogLines.length === 0 || gameLogLines.at(-1) === "") {
+        return;
+    }
+
+    gameLogLines.push("");
+    flushGameLog();
+}
+
+function getRoundRoleSummary(
+    state: GameState,
+): Record<PlayerId, PlayerRank> | null {
+    return state.previousRanks;
+}
+
+function logRoundStart(state: GameState): void {
+    const lines = [LOG_SEPARATOR, `ROUND ${state.roundNumber}`, "", "Hand dealt:"];
+    lines.push(...formatHandsBlock(state.hands, state.revolutionActive));
+
+    const ranks = getRoundRoleSummary(state);
+    if (ranks) {
+        lines.push("");
+        lines.push(...formatRoleLines(ranks));
+    }
+
+    if (state.phase === RoundPhase.Play) {
+        lines.push("", "START");
+    }
+
+    appendGameLogLines(lines);
+}
+
+function logTradeSummary(
+    completedRequirements: NonNullable<GameState["tradeState"]>["requirements"],
+    afterTradeState: GameState,
+): void {
+    if (completedRequirements.length === 0) {
+        throw new Error("Trade summary requires active trade state");
+    }
+
+    const lines = ["", "TRADES:"];
+    lines.push(...formatTradeLines(completedRequirements));
+    lines.push("", "New hand:");
+    lines.push(...formatHandsBlock(afterTradeState.hands, afterTradeState.revolutionActive));
+    lines.push("", "START");
+    appendGameLogLines(lines);
+}
+
+function logActionAndEvents(action: GameAction, events: GameEvent[]): void {
+    const lines: string[] = [];
+    const actionLine = formatActionLine(action);
+    if (actionLine) {
+        lines.push(actionLine);
+    }
+
+    for (const event of events) {
+        const eventLine = formatLogEvent(event);
+        if (eventLine) {
+            lines.push(eventLine);
+        }
+    }
+
+    if (lines.length > 0) {
+        appendGameLogLines(lines);
+    }
 }
 
 function defaultShuffle(deck: Card[]): Card[] {
@@ -273,6 +241,11 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
 
     console.log("\n=== TRADE PHASE ===");
     let s = state;
+    const completedRequirements = state.tradeState.requirements.map((requirement) => ({
+        ...requirement,
+        giverCards: requirement.giverCards ? [...requirement.giverCards] : null,
+        receiverCards: requirement.receiverCards ? [...requirement.receiverCards] : null,
+    }));
 
     const numReqs = s.tradeState!.requirements.length;
     for (let i = 0; i < numReqs; i++) {
@@ -311,6 +284,10 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
             playerId: req.receiverId,
             cards: autoCards,
         };
+        completedRequirements[i] = {
+            ...completedRequirements[i],
+            receiverCards: [...autoCards],
+        };
         const r = dispatch(s, action);
 
         if (!r.ok) {
@@ -319,11 +296,11 @@ async function handleTradePhase(state: GameState): Promise<GameState> {
         }
 
         printEvents(r.events);
-        appendGameLog(r.state, action, r.events);
         s = r.state;
     }
 
     console.log("Trades complete.\n");
+    logTradeSummary(completedRequirements, s);
     return s;
 }
 
@@ -379,7 +356,7 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
             continue;
         }
 
-        appendGameLog(result.state, action, result.events);
+        logActionAndEvents(action, result.events);
         trickHistory = [...trickHistory, historyEntry];
         eventMessages = getEventMessages(result.events);
         if (result.events.some((event) => event.type === "trickEnded")) {
@@ -414,8 +391,9 @@ async function main() {
             console.log(`Failed to start round: ${r.reason}`);
             break;
         }
-        appendGameLog(r.state, startAction, r.events);
         state = r.state;
+        appendBlankLine();
+        logRoundStart(state);
 
         if (state.phase === RoundPhase.Trade) {
             state = await handleTradePhase(state);
@@ -428,6 +406,7 @@ async function main() {
 
     console.log("\n========== FINAL SCORES ==========");
     console.log(formatScores(state.scores));
+    appendGameLogLines(["", `FINAL SCORES: ${formatScores(state.scores)}`]);
 
     rl.close();
 }
