@@ -23,7 +23,7 @@ import {
   buildBotTradeAction,
   getNextPendingTrade,
   isHumanTradeTurn,
-} from "@/lib/game/trade/helpers";
+} from "@/lib/game";
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/validation";
@@ -854,12 +854,19 @@ export function GameTablePrototype() {
     return () => clearTimeout(t);
   }, [gameState, tablePhase]);
 
-  // Human completeTrade handler
+  // Human completeTrade handler (playerId = current requirement receiver)
   const handleCompleteTrade = useCallback((cards: Card[]) => {
     setPlayError(null);
     setGameState((prev) => {
       if (!prev || prev.phase !== RoundPhase.Trade) return prev;
-      const r = dispatch(prev, { type: "completeTrade", playerId: HUMAN_ID, cards });
+      const pending = getNextPendingTrade(prev);
+      if (!pending) return prev;
+      const receiverId = pending.requirement.receiverId;
+      const r = dispatch(prev, {
+        type: "completeTrade",
+        playerId: receiverId,
+        cards,
+      });
       if (!r.ok) {
         queueMicrotask(() => setPlayError(r.reason));
         return prev;
@@ -1193,6 +1200,9 @@ export function GameTablePrototype() {
                     <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Trading Phase</p>
                     <p className="text-sm text-emerald-100">
                       {formatTradeRequirement(req.giverId, req.receiverId, req.giverCards!, req.count)}
+                    </p>
+                    <p className="text-xs text-emerald-200/85">
+                      {formatScores(gameState.scores)}
                     </p>
                     {req.receiverId === HUMAN_ID && (
                       <p className="text-xs text-yellow-300">Select {req.count} card(s) to give</p>
