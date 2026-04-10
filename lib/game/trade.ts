@@ -3,7 +3,6 @@ import { validateTrade } from "./validation";
 import {
     type ActionResult,
     type Card,
-    type GameEvent,
     type GameState,
     type PlayerId,
     PlayerRank,
@@ -12,12 +11,9 @@ import {
     type TradeState,
 } from "./types";
 
-function getHighestCards(
-    hand: Card[],
-    count: number,
-    revolutionActive: boolean,
-): Card[] {
-    const rankOrder = getRankOrder(revolutionActive);
+/** Trade "highest" uses normal rank order only (new round; ignore revolution). */
+function getHighestCards(hand: Card[], count: number): Card[] {
+    const rankOrder = getRankOrder(false);
     const sorted = [...hand].sort(
         (a, b) => rankOrder[b.rank] - rankOrder[a.rank],
     );
@@ -45,16 +41,8 @@ export function buildTradeState(
     const poorId = findPlayerByRank(ranks, PlayerRank.Poor);
     const beggarId = findPlayerByRank(ranks, PlayerRank.Beggar);
 
-    const beggarHighest = getHighestCards(
-        state.hands[beggarId],
-        2,
-        state.revolutionActive,
-    );
-    const poorHighest = getHighestCards(
-        state.hands[poorId],
-        1,
-        state.revolutionActive,
-    );
+    const beggarHighest = getHighestCards(state.hands[beggarId], 2);
+    const poorHighest = getHighestCards(state.hands[poorId], 1);
 
     const requirements: TradeRequirement[] = [
         {

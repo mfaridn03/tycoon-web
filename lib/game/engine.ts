@@ -1,7 +1,6 @@
 import {
     CARDS_PER_PLAYER,
     createDeck,
-    getRankOrder,
     PLAYER_IDS,
     TOTAL_ROUNDS,
 } from "./constants";
@@ -187,10 +186,15 @@ function endRound(state: GameState): { state: GameState; events: GameEvent[] } {
 
     if (s.roundNumber >= TOTAL_ROUNDS) {
         const winner = getMatchWinner(s.scores);
-        s = { ...s, matchFinished: true };
+        s = { ...s, matchFinished: true, revolutionActive: false };
         events.push({ type: "matchFinished", winner });
     } else {
-        s = { ...s, roundNumber: s.roundNumber + 1, phase: RoundPhase.Deal };
+        s = {
+            ...s,
+            roundNumber: s.roundNumber + 1,
+            phase: RoundPhase.Deal,
+            revolutionActive: false,
+        };
     }
 
     return { state: s, events };
@@ -212,7 +216,6 @@ function applyMoveInternal(
 
     const events: GameEvent[] = [];
     const play = new Play(cards);
-    const rankOrder = getRankOrder(state.revolutionActive);
 
     // Remove cards from hand
     const newHand = [...state.hands[playerId]];
@@ -224,7 +227,7 @@ function applyMoveInternal(
     hands[playerId] = newHand;
 
     // Update trick
-    let trick: TrickState = {
+    const trick: TrickState = {
         topPlay: play,
         topPlayerId: playerId,
         currentPattern: play.pattern as PlayPattern,
