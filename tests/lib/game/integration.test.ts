@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
     Card,
     type GameState,
-    type PlayerId,
     PlayerRank,
     RoundPhase,
     type ShuffleFn,
@@ -13,7 +12,7 @@ import {
     startRound,
 } from "../../../lib/game/engine";
 import { getLegalPlays } from "../../../lib/game/validation";
-import { applyTrade } from "../../../lib/game/trade";
+import { applyTrade, buildTradeState } from "../../../lib/game/trade";
 
 function playLowestOrPass(state: GameState): GameState {
     const pid = state.activePlayerId;
@@ -163,5 +162,46 @@ describe("revolution across rounds", () => {
         const r2 = startRound(state, seededShuffle(2));
         if (!r2.ok) throw new Error(r2.reason);
         expect(r2.state.revolutionActive).toBe(false);
+    });
+
+    it("clears revolution flag when round finishes", () => {
+        let state = createInitialGameState();
+        const r = startRound(state, seededShuffle(1));
+        if (!r.ok) throw new Error(r.reason);
+        state = { ...r.state, revolutionActive: true };
+        state = playRound(state);
+        expect(state.revolutionActive).toBe(false);
+    });
+});
+
+describe("trade rank order", () => {
+    it("beggar highest cards ignore revolution flag (normal order)", () => {
+        const state: GameState = {
+            ...createInitialGameState(),
+            phase: RoundPhase.Trade,
+            roundNumber: 2,
+            revolutionActive: true,
+            previousRanks: {
+                0: PlayerRank.Tycoon,
+                1: PlayerRank.Rich,
+                2: PlayerRank.Poor,
+                3: PlayerRank.Beggar,
+            },
+            hands: [
+                [new Card("6", "D")],
+                [new Card("7", "D")],
+                [new Card("5", "C")],
+                [
+                    new Card("2", "D"),
+                    new Card("2", "C"),
+                    new Card("3", "H"),
+                    new Card("3", "S"),
+                ],
+            ],
+        };
+        const ts = buildTradeState(state);
+        const giver = ts.requirements[0].giverCards!;
+        expect(giver).toHaveLength(2);
+        expect(giver.every((c) => c.rank === "2")).toBe(true);
     });
 });

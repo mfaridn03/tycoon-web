@@ -49,8 +49,8 @@ describe("formatCards", () => {
 // ---------------------------------------------------------------------------
 
 describe("playerLabel", () => {
-    it("maps 0-3 to Player A-D", () => {
-        expect(playerLabel(0)).toBe("Player A");
+    it("maps 0-3 to Player X and B-D", () => {
+        expect(playerLabel(0)).toBe("Player X");
         expect(playerLabel(1)).toBe("Player B");
         expect(playerLabel(2)).toBe("Player C");
         expect(playerLabel(3)).toBe("Player D");
@@ -226,13 +226,13 @@ describe("formatEvent", () => {
         } as Record<PlayerId, PlayerRank>;
         const msg = formatEvent({ type: "roundFinished", ranks })!;
         expect(msg).toContain("Round Finished");
-        expect(msg).toContain("Player A: Tycoon");
+        expect(msg).toContain("Player X: Tycoon");
         expect(msg).toContain("Player D: Beggar");
     });
 
     it("formats matchFinished", () => {
         const msg = formatEvent({ type: "matchFinished", winner: 0 });
-        expect(msg).toContain("Player A wins");
+        expect(msg).toContain("Player X wins");
     });
 
     it("formats trickEnded", () => {
@@ -248,7 +248,7 @@ describe("formatEvent", () => {
 describe("formatScores", () => {
     it("formats all four scores", () => {
         const msg = formatScores([30, 20, 10, 0]);
-        expect(msg).toContain("Player A: 30");
+        expect(msg).toContain("Player X: 30");
         expect(msg).toContain("Player D: 0");
     });
 });
