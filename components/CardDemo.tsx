@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createDeck } from "@/lib/game/constants";
-import type { Card } from "@/lib/game/types";
+import type { Card, Suit } from "@/lib/game/types";
+import { DEFAULT_RANK_ORDER } from "@/lib/game/types";
 import { PlayingCard } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
+
+const SUIT_ORDER: Record<Suit, number> = { D: 0, C: 1, H: 2, S: 3 };
+const HAND_SIZE = 13;
+const FLY_DURATION = 400;
+const FLY_STAGGER = 50;
+const FLIP_DURATION = 350;
+const FLIP_STAGGER = 40;
+
+type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "done";
 
 function shuffleDeck(deck: Card[]): Card[] {
   const arr = [...deck];
@@ -16,116 +26,262 @@ function shuffleDeck(deck: Card[]): Card[] {
   return arr;
 }
 
+function sortCards(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => {
+    const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+    if (suitDiff !== 0) return suitDiff;
+    return DEFAULT_RANK_ORDER[a.rank] - DEFAULT_RANK_ORDER[b.rank];
+  });
+}
+
 export function CardDemo() {
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [stackRemainingCount, setStackRemainingCount] = useState<number>(52);
-  const [showDeckCards, setShowDeckCards] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
+    new Set(),
+  );
+  const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
+  const [drawId, setDrawId] = useState(0);
+
+  const stackRef = useRef<HTMLDivElement>(null);
+  const cardSlotsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const flyOffsetsRef = useRef<{ x: number; y: number }[]>([]);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(
+    () => () => {
+      timersRef.current.forEach(clearTimeout);
+    },
+    [],
+  );
 
   function drawDeck() {
-    if (isDrawing) return;
-    setIsDrawing(true);
-    setShowDeckCards(false);
+    if (dealPhase !== "idle" && dealPhase !== "done") return;
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    cardSlotsRef.current = [];
     setSelectedIndices(new Set());
 
-    // Briefly wait to allow exit animation if cards were already shown
-    setTimeout(() => {
-      const deck = shuffleDeck(createDeck());
-      setDrawnCards(deck.slice(0, 13));
-      setStackRemainingCount(52 - 13);
-      setShowDeckCards(true);
-
-      // Finish drawing state after the stagger animation completes
-      setTimeout(() => {
-        setIsDrawing(false);
-      }, 600);
-    }, drawnCards.length > 0 ? 300 : 0);
+    const deck = shuffleDeck(createDeck());
+    setDrawnCards(sortCards(deck.slice(0, HAND_SIZE)));
+    setDrawId((n) => n + 1);
+    setDealPhase("measuring");
   }
 
+  // measuring → compute fly offsets → atStack
+  useEffect(() => {
+    if (dealPhase !== "measuring") return;
+    if (!stackRef.current || drawnCards.length === 0) return;
+
+    const sr = stackRef.current.getBoundingClientRect();
+    const scx = sr.left + sr.width / 2;
+    const scy = sr.top + sr.height / 2;
+
+    flyOffsetsRef.current = cardSlotsRef.current.map((el) => {
+      if (!el) return { x: 0, y: 0 };
+      const r = el.getBoundingClientRect();
+      return {
+        x: scx - (r.left + r.width / 2),
+        y: scy - (r.top + r.height / 2),
+      };
+    });
+
+    setDealPhase("atStack");
+  }, [dealPhase, drawnCards]);
+
+  // atStack → double-rAF (guarantees a paint) → flying
+  useEffect(() => {
+    if (dealPhase !== "atStack") return;
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setDealPhase("flying"));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, [dealPhase]);
+
+  // flying → wait for last card to land → flipping
+  useEffect(() => {
+    if (dealPhase !== "flying") return;
+    const t = setTimeout(
+      () => setDealPhase("flipping"),
+      (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50,
+    );
+    timersRef.current.push(t);
+    return () => clearTimeout(t);
+  }, [dealPhase]);
+
+  // flipping → wait for last card to flip → done
+  useEffect(() => {
+    if (dealPhase !== "flipping") return;
+    const t = setTimeout(
+      () => setDealPhase("done"),
+      (HAND_SIZE - 1) * FLIP_STAGGER + FLIP_DURATION + 50,
+    );
+    timersRef.current.push(t);
+    return () => clearTimeout(t);
+  }, [dealPhase]);
+
   function toggleSelection(index: number) {
-    if (isDrawing) return;
+    if (dealPhase !== "done") return;
     setSelectedIndices((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
 
+  function getSlotStyle(index: number): React.CSSProperties {
+    const offset = flyOffsetsRef.current[index] ?? { x: 0, y: 0 };
+
+    switch (dealPhase) {
+      case "measuring":
+        return { opacity: 0 };
+      case "atStack":
+        return {
+          transform: `translate(${offset.x}px, ${offset.y}px)`,
+          opacity: 1,
+        };
+      case "flying":
+      case "flipping":
+        return {
+          transform: "translate(0, 0)",
+          transition: `transform ${FLY_DURATION}ms ease-out ${index * FLY_STAGGER}ms`,
+          opacity: 1,
+        };
+      case "done":
+        return {
+          transform: selectedIndices.has(index)
+            ? "translateY(-10px)"
+            : "translate(0, 0)",
+          transition: "transform 150ms ease",
+          opacity: 1,
+        };
+      default:
+        return {};
+    }
+  }
+
+  function getFlipStyle(index: number): React.CSSProperties {
+    const shouldFlip = dealPhase === "flipping" || dealPhase === "done";
+    return {
+      transformStyle: "preserve-3d",
+      transition: shouldFlip
+        ? `transform ${FLIP_DURATION}ms ease-in-out ${index * FLIP_STAGGER}ms`
+        : "none",
+      transform: shouldFlip ? "rotateY(180deg)" : "rotateY(0deg)",
+    };
+  }
+
+  const isAnimating = !["idle", "done"].includes(dealPhase);
+
   return (
-    <div className="flex flex-col items-center gap-10 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen">
+    <div className="flex flex-col items-center gap-8 px-6 py-12 w-full max-w-6xl mx-auto min-h-screen">
       <h1 className="text-white text-2xl font-semibold tracking-tight">
         Card Renderer
       </h1>
 
       <button
         onClick={drawDeck}
-        disabled={isDrawing}
+        disabled={isAnimating}
         className="px-6 py-2.5 text-sm font-medium text-black bg-white rounded-full transition-colors hover:bg-zinc-200 active:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed z-10 relative"
       >
         Draw Deck
       </button>
 
-      {/* Center Stack Area */}
-      <div className="relative h-40 w-full flex items-center justify-center">
-        {stackRemainingCount > 0 ? (
+      {/* Center Stack */}
+      <div
+        className="relative w-full flex items-center justify-center"
+        style={{ height: 160 }}
+      >
+        <div
+          ref={stackRef}
+          className={`relative transition-transform duration-300 ${
+            isAnimating ? "scale-95" : "scale-100"
+          }`}
+        >
           <div
-            className={`relative transition-all duration-500 ease-out ${
-              isDrawing && !showDeckCards ? "scale-95 opacity-80" : "scale-100 opacity-100"
-            }`}
+            style={{ width: 96 }}
+            className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
           >
-            {/* Stack visual: offset a few card backs */}
-            <div style={{ width: 96 }} className="absolute -top-1 -left-1 opacity-50 pointer-events-none">
-              <CardBack />
-            </div>
-            <div style={{ width: 96 }} className="absolute -top-0.5 -left-0.5 opacity-80 pointer-events-none">
-              <CardBack />
-            </div>
-            <div style={{ width: 96 }} className="relative shadow-xl">
-              <CardBack />
-            </div>
-            
-            <div className="absolute -bottom-8 left-0 right-0 text-center">
-              <span className="text-zinc-500 text-xs font-medium">
-                {stackRemainingCount} cards
-              </span>
-            </div>
+            <CardBack />
           </div>
-        ) : (
-          <div className="h-40 flex items-center justify-center">
-            <span className="text-zinc-600 text-sm">Click 'Draw Deck' to start</span>
+          <div
+            style={{ width: 96 }}
+            className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
+          >
+            <CardBack />
           </div>
-        )}
+          <div style={{ width: 96 }} className="relative shadow-lg">
+            <CardBack />
+          </div>
+          <div className="absolute -bottom-7 left-0 right-0 text-center">
+            <span className="text-zinc-500 text-xs font-medium">
+              {drawnCards.length > 0 ? `${52 - HAND_SIZE} cards` : "52 cards"}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Drawn Cards Hand */}
-      <div className="w-full flex flex-wrap justify-center gap-3 sm:gap-4 mt-4 px-4 min-h-[160px]">
-        {drawnCards.map((card, index) => {
-          const isSelected = selectedIndices.has(index);
+      {/* Hand */}
+      <div
+        className="flex items-end justify-center"
+        style={{ minHeight: 140 }}
+      >
+        {drawnCards.length === 0 && dealPhase === "idle" && (
+          <p className="text-zinc-600 text-sm">
+            Click &apos;Draw Deck&apos; to start
+          </p>
+        )}
+        {drawnCards.map((card, i) => {
+          const isSelected = selectedIndices.has(i);
           return (
             <div
-              key={`${card.rank}-${card.suit}-${index}`}
-              onClick={() => toggleSelection(index)}
-              className={`transition-all duration-500 ease-out cursor-pointer ${
-                showDeckCards
-                  ? "opacity-100 translate-y-0"
-                  : "opacity-0 translate-y-8"
+              key={`${drawId}-${i}`}
+              ref={(el) => {
+                cardSlotsRef.current[i] = el;
+              }}
+              onClick={() => toggleSelection(i)}
+              className={`cursor-pointer rounded-[6px] ${
+                dealPhase === "done" && isSelected
+                  ? "ring-2 ring-white z-10"
+                  : ""
               }`}
               style={{
-                width: 80,
-                transitionDelay: showDeckCards ? `${index * 30}ms` : "0ms",
+                width: 76,
+                marginLeft: i === 0 ? 0 : -14,
+                ...getSlotStyle(i),
               }}
-              title={cardLabel(card.rank, card.suit)}
+              title={
+                dealPhase === "done"
+                  ? cardLabel(card.rank, card.suit)
+                  : undefined
+              }
             >
-              <PlayingCard 
-                rank={card.rank} 
-                suit={card.suit} 
-                selected={isSelected} 
-              />
+              <div style={{ perspective: 800 }}>
+                <div className="relative" style={getFlipStyle(i)}>
+                  {/* Back face */}
+                  <div style={{ backfaceVisibility: "hidden" }}>
+                    <CardBack />
+                  </div>
+                  {/* Front face */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backfaceVisibility: "hidden",
+                      transform: "rotateY(180deg)",
+                    }}
+                  >
+                    <PlayingCard
+                      rank={card.rank}
+                      suit={card.suit}
+                      className="pointer-events-none !block !w-full !h-full"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           );
         })}
