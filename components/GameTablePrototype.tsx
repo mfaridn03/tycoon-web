@@ -360,9 +360,8 @@ function BotHandStrip({
         </div>
 
         <div
-          className={`relative ${
-            isAnimating ? "opacity-95" : "opacity-100"
-          }`}
+          className={`relative ${isAnimating ? "opacity-95" : "opacity-100"
+            }`}
           style={{ width: BOT_STRIP_W, minHeight: BOT_CARD_H + 8 }}
         >
           {cards.map((_, i) => (
@@ -535,7 +534,7 @@ function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId
     }
 
     return cancel;
-   
+
   }, [prev, playerId]);
 
   if (!displayed) return null;
@@ -620,7 +619,7 @@ function FadingCurrent({
     }
 
     return cancel;
-   
+
   }, [current, playerId, skipFade]);
 
   if (!displayed) return null;
@@ -989,9 +988,9 @@ export function GameTablePrototype() {
       };
       const prevEntry = centerCurrentRef.current
         ? {
-            cards: centerCurrentRef.current.cards,
-            playerId: centerCurrentRef.current.playerId,
-          }
+          cards: centerCurrentRef.current.cards,
+          playerId: centerCurrentRef.current.playerId,
+        }
         : null;
       centerCurrentRef.current = newEntry;
       queueMicrotask(() => {
@@ -1147,31 +1146,31 @@ export function GameTablePrototype() {
 
   const playMode =
     tablePhase === "playing" &&
-    gameState?.phase === RoundPhase.Play &&
-    gameState.activePlayerId === HUMAN_ID
+      gameState?.phase === RoundPhase.Play &&
+      gameState.activePlayerId === HUMAN_ID
       ? {
-          canPass: canPass(gameState),
-          onPlay: handleHumanPlay,
-          onPass: handlePass,
-          playError,
-        }
+        canPass: canPass(gameState),
+        onPlay: handleHumanPlay,
+        onPass: handlePass,
+        playError,
+      }
       : null;
   const legalPlays =
     playMode && gameState ? getLegalPlays(gameState, HUMAN_ID) : null;
 
   const tradeMode =
     tablePhase === "trading" &&
-    gameState?.phase === RoundPhase.Trade &&
-    isHumanTradeTurn(gameState, HUMAN_ID)
+      gameState?.phase === RoundPhase.Trade &&
+      isHumanTradeTurn(gameState, HUMAN_ID)
       ? (() => {
-          const pending = getNextPendingTrade(gameState);
-          if (!pending) return null;
-          return {
-            pickCount: pending.requirement.count,
-            onConfirm: handleCompleteTrade,
-            error: playError,
-          };
-        })()
+        const pending = getNextPendingTrade(gameState);
+        if (!pending) return null;
+        return {
+          pickCount: pending.requirement.count,
+          onConfirm: handleCompleteTrade,
+          error: playError,
+        };
+      })()
       : null;
 
   return (
@@ -1184,9 +1183,8 @@ export function GameTablePrototype() {
       }
     >
       <div
-        className={`relative flex min-h-dvh flex-col transition-[filter,opacity] duration-300 ${
-          tablePhase === "pre" ? "blur-sm" : ""
-        }`}
+        className={`relative flex min-h-dvh flex-col transition-[filter,opacity] duration-300 ${tablePhase === "pre" ? "blur-sm" : ""
+          }`}
       >
         {/* Table surface glow */}
         <div
@@ -1268,18 +1266,15 @@ export function GameTablePrototype() {
                 const pending = getNextPendingTrade(gameState);
                 if (!pending) return null;
                 const { requirement: req } = pending;
+
+                if (req.receiverId !== HUMAN_ID) return null;
+
                 return (
-                  <div className="flex flex-col items-center gap-2 rounded-xl bg-black/30 px-6 py-4 text-center backdrop-blur-sm">
+                  <div className="flex flex-col items-center justify-center rounded-lg bg-black/30 px-5 py-4 text-center backdrop-blur-sm ring-1 ring-white/10 shadow-lg">
                     <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Trading Phase</p>
-                    <p className="text-sm text-emerald-100">
-                      {formatTradeRequirement(req.giverId, req.receiverId, req.giverCards!, req.count)}
+                    <p className="text-sm font-medium text-yellow-300 shadow-black drop-shadow-md">
+                      Select {req.count} card{req.count !== 1 ? 's' : ''} to give
                     </p>
-                    <p className="text-xs text-emerald-200/85">
-                      {formatScores(gameState.scores)}
-                    </p>
-                    {req.receiverId === HUMAN_ID && (
-                      <p className="text-xs text-yellow-300">Select {req.count} card(s) to give</p>
-                    )}
                   </div>
                 );
               })()}
