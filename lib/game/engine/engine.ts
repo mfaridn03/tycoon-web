@@ -1,5 +1,6 @@
 import {
     createDeck,
+    getRankOrder,
     PLAYER_IDS,
     TOTAL_ROUNDS,
 } from "../core/constants";
@@ -18,6 +19,7 @@ import {
     PlayerRank,
     type Rank,
     RoundPhase,
+    setActiveRankOrder,
     type ShuffleFn,
     type TrickState,
 } from "../core/types";
@@ -74,7 +76,7 @@ export function dealRound(state: GameState, shuffleFn: ShuffleFn): GameState {
         }
     }
 
-    return {
+    const newState: GameState = {
         ...state,
         hands,
         finishOrder: [],
@@ -84,6 +86,8 @@ export function dealRound(state: GameState, shuffleFn: ShuffleFn): GameState {
         revolutionActive: false,
         trick: emptyTrick(),
     };
+    setActiveRankOrder(getRankOrder(false));
+    return newState;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +204,7 @@ function endRound(state: GameState): { state: GameState; events: GameEvent[] } {
         };
     }
 
+    setActiveRankOrder(getRankOrder(false));
     return { state: s, events };
 }
 
@@ -274,6 +279,7 @@ function applyMoveInternal(
                 ? { type: "counterRevolution" }
                 : { type: "revolution" },
         );
+        setActiveRankOrder(getRankOrder(revolutionActive));
     }
 
     let s: GameState = {
@@ -415,6 +421,7 @@ export function dispatch(
             return applyPassInternal(state, action.playerId);
         case "endMatch": {
             const winner = getMatchWinner(state.scores);
+            setActiveRankOrder(getRankOrder(false));
             return {
                 ok: true,
                 state: { ...state, matchFinished: true, revolutionActive: false },
