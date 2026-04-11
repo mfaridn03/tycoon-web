@@ -1361,20 +1361,39 @@ export function GameTablePrototype() {
                 <p className="text-base font-medium text-yellow-300">
                   {playerLabel(getMatchWinner(gameState.scores))} wins!
                 </p>
-                <button
-                  type="button"
-                  onClick={() => { resetGame(); startGame(); }}
-                  className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
-                >
-                  Play again
-                </button>
-                <button
-                  type="button"
-                  onClick={resetGame}
-                  className="rounded-full bg-emerald-800 px-8 py-2 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98]"
-                >
-                  Back to menu
-                </button>
+
+                <div className="flex flex-col rounded-lg bg-black/20 px-5 py-3 w-full my-2 ring-1 ring-emerald-500/20 text-left">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300/80 mb-2">
+                    Final Scores
+                  </p>
+                  <ul className="flex flex-col gap-1.5 text-sm">
+                    {playersByScoreDesc(gameState.scores).map((id) => (
+                      <li key={id} className="flex justify-between tabular-nums">
+                        <span className="font-medium text-emerald-100">
+                          {TABLE_PLAYER_NAMES[id]}
+                        </span>
+                        <span className="text-emerald-300 font-semibold">{gameState.scores[id]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex flex-col gap-2 w-full mt-1">
+                  <button
+                    type="button"
+                    onClick={() => { resetGame(); startGame(); }}
+                    className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98] w-full"
+                  >
+                    Play again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetGame}
+                    className="rounded-full bg-emerald-800/80 px-8 py-2.5 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98] w-full border border-emerald-700/50"
+                  >
+                    Back to menu
+                  </button>
+                </div>
               </>
             ) : (
               <>
