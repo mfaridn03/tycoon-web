@@ -11,6 +11,34 @@ import { getLegalPlays } from "../rules/validation";
 
 const SUIT_ORDER = { D: 0, C: 1, H: 2, S: 3, RJ: 4, BJ: 5 } as const;
 
+/**
+ * Filter for Joker plays:
+ * - Allow length 1 (itself), 3 (triple), or 4 (revolution).
+ * - Allow length 2 ONLY IF it consists of 2 jokers AND is beating a pair of 2s.
+ * - Discourage "wasting" a joker for other pairs.
+ * - Prevent mimicking a rank with a single joker.
+ */
+function isPreferredJokerPlay(play: LegalPlay, state: GameState): boolean {
+    const hasJoker = play.cards.some((c) => c.isJoker());
+    if (!hasJoker) return true;
+    const count = play.cards.length;
+    // Reject if used as a wildcard for a single card (mimicking)
+    if (count === 1 && play.wildcardRank) return false;
+
+    // Reject pairs except two jokers beating a pair of 2s
+    if (count === 2) {
+        const allJokers = play.cards.every((c) => c.isJoker());
+        const beatingTwos =
+            state.trick.topPlay !== null &&
+            state.trick.topPlay.cards.length === 2 &&
+            state.trick.topPlay.effectiveRank === "2";
+        return allJokers && beatingTwos;
+    }
+
+    // Joker only allowed as single (1), triple (3), or revolution (4)
+    return count === 1 || count === 3 || count === 4;
+}
+
 /** Lowest play first: shorter patterns before longer; then rank; then suit. */
 function sortPlaysLowestFirst(
     plays: LegalPlay[],
@@ -24,7 +52,7 @@ function sortPlaysLowestFirst(
         const ra = rankOrder[rankA] - rankOrder[rankB];
         if (ra !== 0) return ra;
         return (SUIT_ORDER[a.cards[0]!.suit as keyof typeof SUIT_ORDER] ?? 0) -
-               (SUIT_ORDER[b.cards[0]!.suit as keyof typeof SUIT_ORDER] ?? 0);
+            (SUIT_ORDER[b.cards[0]!.suit as keyof typeof SUIT_ORDER] ?? 0);
     });
 }
 
@@ -42,7 +70,9 @@ export function chooseBotPlay(
     playerId: PlayerId,
     random: () => number = Math.random,
 ): BotPlayChoice {
-    const legal = getLegalPlays(state, playerId);
+    const allLegal = getLegalPlays(state, playerId);
+    const legal = allLegal.filter((p) => isPreferredJokerPlay(p, state));
+
     const rankOrder = getRankOrder(state.revolutionActive);
 
     if (state.trick.topPlay !== null) {
@@ -74,7 +104,7 @@ export function chooseBotPlay(
     if (availablePatterns.length > 0) {
         const pick =
             availablePatterns[
-                Math.floor(random() * availablePatterns.length)
+            Math.floor(random() * availablePatterns.length)
             ]!;
         const size = pick + 1;
         const subset = legal.filter((c) => c.cards.length === size);
