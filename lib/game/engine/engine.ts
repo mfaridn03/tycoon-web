@@ -320,6 +320,20 @@ function applyMoveInternal(
             }
         }
         s = { ...s, finishOrder, finishedPlayers, demotedTycoonId };
+
+        // If 3 players are finished, the 4th is automatically last.
+        // This prevents the game from hanging when only one player has cards left.
+        if (finishedPlayers.length === PLAYER_IDS.length - 1) {
+            const lastPlayerId = PLAYER_IDS.find((id) => !finishedPlayers.includes(id))!;
+            finishedPlayers.push(lastPlayerId);
+            finishOrder.push(lastPlayerId);
+            events.push({
+                type: "playerFinished",
+                playerId: lastPlayerId,
+                position: finishOrder.length,
+            });
+            s = { ...s, finishOrder, finishedPlayers };
+        }
     }
 
     // All players finished? End round.
