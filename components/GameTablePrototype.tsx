@@ -739,6 +739,8 @@ export function GameTablePrototype() {
   const passTimersRef = useRef<Map<PlayerId, ReturnType<typeof setTimeout>>>(new Map());
   const eightStopClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [tradeReceivedCards, setTradeReceivedCards] = useState<Card[] | null>(null);
+
   // Cleanup pass timers on unmount
   useEffect(
     () => () => {
@@ -768,6 +770,7 @@ export function GameTablePrototype() {
       clearTimeout(eightStopClearTimerRef.current);
       eightStopClearTimerRef.current = null;
     }
+    setTradeReceivedCards(null);
   }, []);
 
   const startGame = useCallback(() => {
@@ -871,6 +874,7 @@ export function GameTablePrototype() {
     if (tablePhase !== "playing" || !gameState) return;
     if (gameState.phase !== RoundPhase.Play) return;
     if (gameState.activePlayerId === HUMAN_ID) return;
+    if (tradeReceivedCards !== null) return;
 
     const t = setTimeout(() => {
       setGameState((prev) => {
@@ -891,7 +895,7 @@ export function GameTablePrototype() {
       });
     }, 1000);
     return () => clearTimeout(t);
-  }, [gameState, tablePhase]);
+  }, [gameState, tablePhase, tradeReceivedCards]);
 
   // Human completeTrade handler (playerId = current requirement receiver)
   const handleCompleteTrade = useCallback((cards: Card[]) => {
@@ -957,6 +961,14 @@ export function GameTablePrototype() {
     prevGameStateRef.current = gameState;
 
     if (!prev || !prevGS) return; // first render — establish baseline only
+
+    // Detect Trade -> Play transition to show received cards
+    if (prevGS.phase === RoundPhase.Trade && gameState.phase === RoundPhase.Play && prevGS.tradeState) {
+      const myReq = prevGS.tradeState.requirements.find(r => r.receiverId === HUMAN_ID);
+      if (myReq && myReq.giverCards && myReq.giverCards.length > 0) {
+        setTradeReceivedCards(myReq.giverCards);
+      }
+    }
 
     const prevActivePlayer = prevGS.activePlayerId;
 
@@ -1387,6 +1399,26 @@ export function GameTablePrototype() {
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {tradeReceivedCards && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer"
+          onClick={() => setTradeReceivedCards(null)}
+        >
+          <div className="flex flex-col items-center gap-6 cursor-default rounded-2xl bg-emerald-950/90 px-10 py-8 shadow-2xl ring-1 ring-emerald-500/30" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold tracking-wide text-emerald-50 drop-shadow">Cards received:</h2>
+            <div className="flex justify-center scale-[1.2] my-4">
+              <FaceUpCards cards={tradeReceivedCards} />
+            </div>
+            <button 
+              className="mt-2 rounded-full bg-white px-8 py-2.5 text-sm font-bold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
+              onClick={() => setTradeReceivedCards(null)}
+            >
+              Continue
+            </button>
           </div>
         </div>
       )}
