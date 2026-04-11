@@ -117,10 +117,10 @@ describe("selectLowestCards", () => {
 
 describe("buildPlayOptions", () => {
     it("numbers options starting at 1, sorted by size then rank", () => {
-        const plays: Card[][] = [
-            [new Card("K", "H")],
-            [new Card("5", "D")],
-            [new Card("5", "C"), new Card("5", "D")],
+        const plays = [
+            { cards: [new Card("K", "H")] },
+            { cards: [new Card("5", "D")] },
+            { cards: [new Card("5", "C"), new Card("5", "D")] },
         ];
         const options = buildPlayOptions(plays, DEFAULT_RANK_ORDER);
         expect(options).toHaveLength(3);

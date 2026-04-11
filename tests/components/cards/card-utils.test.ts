@@ -29,7 +29,7 @@ describe("drawRandomCard", () => {
     for (let i = 0; i < 50; i++) {
       const card = drawRandomCard();
       expect(DEFAULT_RANK_SEQUENCE).toContain(card.rank);
-      expect(SUITS).toContain(card.suit);
+      expect([...SUITS, "RJ", "BJ"]).toContain(card.suit);
     }
   });
 });

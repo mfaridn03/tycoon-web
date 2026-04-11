@@ -11,7 +11,13 @@ import {
     type Suit,
 } from "./types";
 
+/** Standard playing-card suits (excludes joker pseudo-suits RJ/BJ). */
 export const SUITS: readonly Suit[] = ["D", "C", "H", "S"];
+
+/** Standard ranks (excludes JK). */
+export const STANDARD_RANKS: readonly Rank[] = DEFAULT_RANK_SEQUENCE.filter(
+    (r) => r !== "JK",
+);
 
 export const REVERSED_RANK_SEQUENCE: readonly Rank[] = [
     ...DEFAULT_RANK_SEQUENCE,
@@ -25,13 +31,17 @@ export function getRankOrder(revolutionActive: boolean): RankOrder {
     return revolutionActive ? REVERSED_RANK_ORDER : DEFAULT_RANK_ORDER;
 }
 
+/** 54-card deck: 52 standard + 2 jokers. */
 export function createDeck(): Card[] {
     const deck: Card[] = [];
     for (const suit of SUITS) {
-        for (const rank of DEFAULT_RANK_SEQUENCE) {
+        for (const rank of STANDARD_RANKS) {
             deck.push(new CardClass(rank, suit));
         }
     }
+    // Jokers
+    deck.push(new CardClass("JK", "RJ"));
+    deck.push(new CardClass("JK", "BJ"));
     return deck;
 }
 
@@ -45,4 +55,5 @@ export const SCORE_TABLE: Record<PlayerRank, number> = {
 };
 
 export const TOTAL_ROUNDS = Infinity;
+/** Minimum cards per player (54 / 4 = 13r2, so two players get 14). */
 export const CARDS_PER_PLAYER = 13;

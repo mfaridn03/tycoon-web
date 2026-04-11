@@ -35,6 +35,7 @@ describe("Card", () => {
             "5",
             "4",
             "3",
+            "JK",
         ]);
 
         setActiveRankOrder(reversedOrder);
@@ -60,6 +61,7 @@ describe("Card", () => {
             "3",
             "2",
             "A",
+            "JK",
         ]);
 
         expect(five.higherThan(king)).toBe(false);
@@ -79,8 +81,8 @@ describe("Card", () => {
     it("returns string and primitive representations", () => {
         const card = new Card("Q", "H");
 
-        expect(card.toString()).toBe("Q H");
-        expect(String(card)).toBe("Q H");
+        expect(card.toString()).toBe("QH");
+        expect(String(card)).toBe("QH");
         expect(Number(card)).toBe(DEFAULT_RANK_ORDER.Q);
     });
 });
@@ -159,7 +161,7 @@ describe("Play", () => {
         const play = new Play([new Card("J", "D"), new Card("J", "S")]);
 
         expect(Number(play)).toBe(DEFAULT_RANK_ORDER.J);
-        expect(String(play)).toBe("J D J S");
+        expect(String(play)).toBe("JD JS");
     });
 
     it("throws for unsupported play lengths", () => {

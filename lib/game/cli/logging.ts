@@ -110,6 +110,10 @@ export function formatLogEvent(event: GameEvent): string | null {
             return `${playerLabel(event.winner)} wins match`;
         case "trickEnded":
             return `${playerLabel(event.winner)} won trick`;
+        case "jokerWildcard":
+            return `${playerLabel(event.playerId)} played joker as ${event.asRank}`;
+        case "threeSpadeCounter":
+            return `${playerLabel(event.playerId)} countered joker with 3S`;
         default:
             return null;
     }

@@ -28,7 +28,7 @@ import {
 import { createInitialGameState, dispatch } from "@/lib/game/engine";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/validation";
-import type { Card, GameEvent, GameState, PlayerId, TrickState } from "@/lib/game/types";
+import type { Card, GameEvent, GameState, PlayerId, Rank, TrickState } from "@/lib/game/types";
 import { RoundPhase } from "@/lib/game/types";
 
 const STACK_CARD_W = 96;
@@ -48,7 +48,7 @@ const PLAY_ZONE_OFFSETS: Record<number, [number, number]> = {
 const BOT_CARD_W = 32;
 const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
 const BOT_OVERLAP = 24;
-const HAND_SIZE = 13;
+const HAND_SIZE = 14;
 const BOT_STRIP_STEP = BOT_CARD_W - BOT_OVERLAP;
 const BOT_STRIP_W = BOT_CARD_W + (HAND_SIZE - 1) * BOT_STRIP_STEP;
 const FLY_DURATION = 400;
@@ -838,11 +838,11 @@ export function GameTablePrototype() {
     }
   }, []);
 
-  const handleHumanPlay = useCallback((cards: Card[]) => {
+  const handleHumanPlay = useCallback((cards: Card[], wildcardRank?: Rank) => {
     setPlayError(null);
     setGameState((prev) => {
       if (!prev) return prev;
-      const r = dispatch(prev, { type: "play", playerId: HUMAN_ID, cards });
+      const r = dispatch(prev, { type: "play", playerId: HUMAN_ID, cards, wildcardRank });
       if (!r.ok) {
         queueMicrotask(() => setPlayError(r.reason));
         return prev;
@@ -889,7 +889,7 @@ export function GameTablePrototype() {
         const action =
           choice.type === "pass"
             ? { type: "pass" as const, playerId: pid }
-            : { type: "play" as const, playerId: pid, cards: choice.cards };
+            : { type: "play" as const, playerId: pid, cards: choice.cards, wildcardRank: choice.wildcardRank };
         const r = dispatch(prev, action);
         if (!r.ok) return prev;
         if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {

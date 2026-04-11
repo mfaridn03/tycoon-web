@@ -1,6 +1,10 @@
-export type Suit = "D" | "C" | "H" | "S";
-export type Rank = "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "J" | "Q" | "K" | "A" | "2";
-// TODO: joker implementation
+export type Suit = "D" | "C" | "H" | "S" | "RJ" | "BJ";
+export type Rank = "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "J" | "Q" | "K" | "A" | "2" | "JK";
+
+export interface LegalPlay {
+    cards: Card[];
+    wildcardRank?: Rank;
+}
 
 export interface Comparable<T> {
     higherThan(other: T, rankOrder?: RankOrder): boolean;
@@ -22,6 +26,7 @@ export const DEFAULT_RANK_SEQUENCE: readonly Rank[] = [
     "K",
     "A",
     "2",
+    "JK",
 ];
 
 export function createRankOrder(rankSequence: readonly Rank[] = DEFAULT_RANK_SEQUENCE): RankOrder {
@@ -72,12 +77,12 @@ export enum PlayPattern {
 
 /** Special rules triggered by the play; composable (e.g. four 8s = EightStop + Revolution). */
 export enum PlayEffect {
-    /** Play uses only 8s (any count). */
+    /** Play uses only 8s (any count), or joker wildcarding as 8. */
     EightStop,
     /** Four of the same rank — revolution. */
     Revolution,
-    // Joker, // TODO: joker plays
-    // ThreeSpade // TODO: 3S vs Joker edge case
+    /** Single joker played as itself (vulnerable to 3♠). */
+    Joker,
 }
 
 // Relational ops on Play use first card's rank strength (all cards share rank). Ignores pattern/effects.
@@ -85,33 +90,52 @@ export enum PlayEffect {
 export class Play implements Comparable<Play> {
     public readonly cards: Card[];
     public readonly pattern: PlayPattern;
+    public readonly wildcardRank: Rank | null;
     /** Frozen; use `.has()` for effect checks. */
     public readonly effects: ReadonlySet<PlayEffect>;
 
     // play validity checking should be done before class creation
-    constructor(cards: Card[]) {
+    constructor(cards: Card[], wildcardRank?: Rank) {
         this.cards = [...cards];
         this.pattern = this.patternFromCardCount(cards.length);
+        this.wildcardRank = wildcardRank ?? null;
         const effectSet = this.computePlayEffects(cards);
         
         Object.freeze(effectSet);
         this.effects = effectSet;
     }
 
+    /** Effective rank used for comparison (wildcardRank if set, else first card's rank). */
+    get effectiveRank(): Rank {
+        return this.wildcardRank ?? this.cards[0].rank;
+    }
+
     valueOf(): number {
-        return this.cards[0].valueOf();
+        return getActiveRankOrder()[this.effectiveRank];
     }
 
     [Symbol.toPrimitive](hint: "default" | "string" | "number"): string | number {
         if (hint === "number" || hint === "default") {
-            return this.cards[0].valueOf();
+            return getActiveRankOrder()[this.effectiveRank];
         }
         return this.cards.map((c) => c.toString()).join(" ");
     }
 
     higherThan(other: Play, rankOrder?: RankOrder) {
         if (this.pattern !== other.pattern) return false;
-        return this.cards[0].higherThan(other.cards[0], rankOrder);
+
+        // 3♠ counter: real 3♠ card beats a single solo joker
+        if (
+            other.effects.has(PlayEffect.Joker) &&
+            this.cards.length === 1 &&
+            this.cards[0].rank === "3" &&
+            this.cards[0].suit === "S" &&
+            !this.cards[0].isJoker()
+        ) {
+            return true;
+        }
+
+        return isHigherRank(this.effectiveRank, other.effectiveRank, rankOrder);
     }
 
     private patternFromCardCount(length: number): PlayPattern {
@@ -131,12 +155,23 @@ export class Play implements Comparable<Play> {
 
     private computePlayEffects(cards: Card[]): Set<PlayEffect> {
         const effects = new Set<PlayEffect>();
-        if (cards.length > 0 && cards.every((c) => c.rank === "8")) {
+
+        // Single joker played as itself (no wildcard)
+        if (cards.length === 1 && cards[0].isJoker() && !this.wildcardRank) {
+            effects.add(PlayEffect.Joker);
+        }
+
+        // Eight stop: all effective ranks are 8
+        const effectiveRank = this.wildcardRank ?? cards[0]?.rank;
+        if (cards.length > 0 && effectiveRank === "8") {
             effects.add(PlayEffect.EightStop);
         }
+
+        // Revolution: four cards (including joker wildcards)
         if (cards.length === 4) {
             effects.add(PlayEffect.Revolution);
         }
+
         return effects;
     }
 }
@@ -219,7 +254,7 @@ export interface GameState {
 export type GameAction =
     | { type: "startRound" }
     | { type: "completeTrade"; playerId: PlayerId; cards: Card[] }
-    | { type: "play"; playerId: PlayerId; cards: Card[] }
+    | { type: "play"; playerId: PlayerId; cards: Card[]; wildcardRank?: Rank }
     | { type: "pass"; playerId: PlayerId }
     | { type: "endMatch" };
 
@@ -235,7 +270,9 @@ export type GameEvent =
     | { type: "playerFinished"; playerId: PlayerId; position: number }
     | { type: "tycoonDemoted"; playerId: PlayerId }
     | { type: "roundFinished"; ranks: Record<PlayerId, PlayerRank> }
-    | { type: "matchFinished"; winner: PlayerId };
+    | { type: "matchFinished"; winner: PlayerId }
+    | { type: "jokerWildcard"; playerId: PlayerId; asRank: Rank }
+    | { type: "threeSpadeCounter"; playerId: PlayerId };
 
 // ---------------------------------------------------------------------------
 // Validation helpers (used by validation layer)
@@ -260,6 +297,10 @@ export class Card implements Comparable<Card> {
         Object.freeze(this);
     }
 
+    isJoker(): boolean {
+        return this.rank === "JK";
+    }
+
     valueOf(): number {
         return getActiveRankOrder()[this.rank];
     }
@@ -272,7 +313,10 @@ export class Card implements Comparable<Card> {
     }
 
     toString() {
-        return `${this.rank} ${this.suit}`;
+        if (this.isJoker()) {
+            return this.suit === "RJ" ? "JK(R)" : "JK(B)";
+        }
+        return `${this.rank}${this.suit}`;
     }
 
     equals(other: Card) {

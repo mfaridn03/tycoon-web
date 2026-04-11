@@ -20,6 +20,7 @@ import {
     type GameEvent,
     type GameState,
     type PlayerId,
+    type Rank,
     PlayerRank,
     RoundPhase,
 } from "../lib/game/types";
@@ -228,7 +229,7 @@ function renderPlayScreen(
 
     printSeparator();
 
-    return { options, passAllowed };
+    return { options, passAllowed, legal };
 }
 
 async function promptTradeCardPick(
@@ -380,6 +381,7 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
                     type: "play",
                     playerId: pid,
                     cards: botChoice.cards,
+                    wildcardRank: botChoice.wildcardRank,
                 };
             }
             const result = dispatch(s, action);
@@ -433,6 +435,7 @@ async function handlePlayPhase(state: GameState): Promise<GameState> {
                 type: "play",
                 playerId: pid,
                 cards: chosen.cards,
+                wildcardRank: chosen.wildcardRank,
             };
             result = dispatch(s, action);
         }

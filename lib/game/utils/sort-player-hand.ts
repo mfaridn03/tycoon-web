@@ -1,9 +1,9 @@
 import type { Card, Suit } from "../core/types";
 import { DEFAULT_RANK_ORDER } from "../core/types";
 
-const SUIT_ORDER: Record<Suit, number> = { D: 0, C: 1, H: 2, S: 3 };
+const SUIT_ORDER: Record<Suit, number> = { D: 0, C: 1, H: 2, S: 3, RJ: 4, BJ: 5 };
 
-/** Sort by rank (game/CLI order), then suit tie-break. */
+/** Sort by rank (game/CLI order), then suit tie-break. Jokers sort rightmost. */
 export function sortPlayerHand(cards: Card[]): Card[] {
   return [...cards].sort((a, b) => {
     const rankDiff = DEFAULT_RANK_ORDER[a.rank] - DEFAULT_RANK_ORDER[b.rank];

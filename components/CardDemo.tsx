@@ -12,12 +12,13 @@ import {
 import { createDeck } from "@/lib/game/constants";
 import { shuffleDeck } from "@/lib/game/shuffle-deck";
 import { sortPlayerHand } from "@/lib/game/sort-player-hand";
-import type { Card } from "@/lib/game/types";
+import type { Card, LegalPlay, Rank } from "@/lib/game/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
 
-const HAND_SIZE = 13;
+/** 54-card deck → two players get 14, so max hand size is 14. */
+const MAX_HAND_SIZE = 14;
 const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const FLIP_DURATION = 350;
@@ -35,7 +36,7 @@ type DealPhase = "idle" | "measuring" | "atStack" | "flying" | "flipping" | "don
 
 export type CardDemoPlayMode = {
   canPass: boolean;
-  onPlay: (cards: Card[]) => void;
+  onPlay: (cards: Card[], wildcardRank?: Rank) => void;
   onPass: () => void;
   playError?: string | null;
 };
@@ -53,7 +54,7 @@ export type CardDemoProps = {
   /** Pre-dealt player hand; embedded mount starts deal when length is 13. */
   playerCards?: Card[] | null;
   /** Legal plays for current turn. Cards not in any legal play are greyed out. */
-  legalPlays?: Card[][] | null;
+  legalPlays?: LegalPlay[] | null;
   className?: string;
   onDealComplete?: () => void;
   /** After initial deal, sync hand from parent without re-deal animation (shedding). */
@@ -115,8 +116,8 @@ export function CardDemo({
       indexByKey.set(`${card.rank}:${card.suit}`, i);
     });
     const set = new Set<number>();
-    for (const play of legalPlays) {
-      for (const card of play) {
+    for (const lp of legalPlays) {
+      for (const card of lp.cards) {
         const idx = indexByKey.get(`${card.rank}:${card.suit}`);
         if (idx !== undefined) set.add(idx);
       }
@@ -150,12 +151,12 @@ export function CardDemo({
 
   function drawDeck() {
     const deck = shuffleDeck(createDeck());
-    beginDealWithCards(deck.slice(0, HAND_SIZE));
+    beginDealWithCards(deck.slice(0, MAX_HAND_SIZE));
   }
 
   useLayoutEffect(() => {
     if (variant !== "embedded") return;
-    if (!playerCards || playerCards.length !== HAND_SIZE) return;
+    if (!playerCards || playerCards.length < 13 || playerCards.length > 14) return;
     // After first deal, parent uses `gameHandSync` to apply hand updates (e.g. post-trade).
     // Re-running the full deal here would leave `dealPhase` stuck in "measuring" when the
     // center stack is unmounted during play (`externalStackRef` null), so hand vanishes.
@@ -263,7 +264,7 @@ export function CardDemo({
     if (dealPhase !== "flying") return;
     const t = setTimeout(
       () => setDealPhase("flipping"),
-      (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50,
+      (MAX_HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50,
     );
     timersRef.current.push(t);
     return () => clearTimeout(t);
@@ -274,7 +275,7 @@ export function CardDemo({
     if (dealPhase !== "flipping") return;
     const t = setTimeout(
       () => setDealPhase("done"),
-      (HAND_SIZE - 1) * FLIP_STAGGER + FLIP_DURATION + 50,
+      (MAX_HAND_SIZE - 1) * FLIP_STAGGER + FLIP_DURATION + 50,
     );
     timersRef.current.push(t);
     return () => clearTimeout(t);
@@ -478,7 +479,19 @@ export function CardDemo({
                   onClick={() => {
                     const idxs = [...selectedIndices].sort((a, b) => a - b);
                     const cards = idxs.map((i) => drawnCards[i]!);
-                    playMode.onPlay(cards);
+                    // Find matching legal play to get wildcardRank
+                    let wildcardRank: Rank | undefined;
+                    if (legalPlays) {
+                      const cardKeys = new Set(cards.map(c => `${c.rank}:${c.suit}`));
+                      const match = legalPlays.find(lp => {
+                        if (lp.cards.length !== cards.length) return false;
+                        const lpKeys = new Set(lp.cards.map(c => `${c.rank}:${c.suit}`));
+                        for (const k of cardKeys) { if (!lpKeys.has(k)) return false; }
+                        return true;
+                      });
+                      wildcardRank = match?.wildcardRank;
+                    }
+                    playMode.onPlay(cards, wildcardRank);
                   }}
                   disabled={selectedIndices.size === 0}
                   data-card-demo-interactive="true"

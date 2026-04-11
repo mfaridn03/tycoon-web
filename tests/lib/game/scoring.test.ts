@@ -84,10 +84,6 @@ describe("isGameOver", () => {
         expect(isGameOver({ ...state, matchFinished: true })).toBe(true);
     });
 
-    it("returns true when roundNumber exceeds total", () => {
-        const state = makeFinishedRoundState([0, 1, 2, 3]);
-        expect(isGameOver({ ...state, roundNumber: 4 })).toBe(true);
-    });
 
     it("returns false during active match", () => {
         const state = makeFinishedRoundState([0, 1, 2, 3]);

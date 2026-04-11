@@ -1,5 +1,4 @@
 import {
-    CARDS_PER_PLAYER,
     createDeck,
     PLAYER_IDS,
     TOTAL_ROUNDS,
@@ -17,6 +16,7 @@ import {
     type PlayerId,
     type PlayPattern,
     PlayerRank,
+    type Rank,
     RoundPhase,
     type ShuffleFn,
     type TrickState,
@@ -67,9 +67,10 @@ export function dealRound(state: GameState, shuffleFn: ShuffleFn): GameState {
         hands[i % 4].push(deck[i]);
     }
 
+    // 54 cards: two players get 14, two get 13 — no strict equality check
     for (const hand of hands) {
-        if (hand.length !== CARDS_PER_PLAYER) {
-            throw new Error("Deck size mismatch after deal");
+        if (hand.length < 13 || hand.length > 14) {
+            throw new Error(`Deck size mismatch after deal: hand has ${hand.length} cards`);
         }
     }
 
@@ -125,7 +126,7 @@ export function startRound(
         };
     }
 
-    // Rounds 2/3: trade phase
+    // Rounds 2+: trade phase
     s = startTradePhase(s);
     return { ok: true, state: s, events: [] };
 }
@@ -210,14 +211,40 @@ function applyMoveInternal(
     state: GameState,
     playerId: PlayerId,
     cards: Card[],
+    wildcardRank?: Rank,
 ): ActionResult {
-    const validation = validatePlay(state, playerId, cards);
+    const validation = validatePlay(state, playerId, cards, wildcardRank);
     if (!validation.valid) {
         return { ok: false, reason: validation.reason };
     }
 
     const events: GameEvent[] = [];
-    const play = new Play(cards);
+
+    // Infer effective wildcardRank if jokers mixed with normal cards
+    let effectiveWildcard = wildcardRank;
+    const hasJokers = cards.some((c) => c.isJoker());
+    const nonJokers = cards.filter((c) => !c.isJoker());
+    if (hasJokers && nonJokers.length > 0 && !effectiveWildcard) {
+        effectiveWildcard = nonJokers[0].rank;
+    }
+
+    const play = new Play(cards, effectiveWildcard);
+
+    // Emit joker wildcard event
+    if (hasJokers && effectiveWildcard) {
+        events.push({ type: "jokerWildcard", playerId, asRank: effectiveWildcard });
+    }
+
+    // Emit 3♠ counter event
+    if (
+        state.trick.topPlay?.effects.has(PlayEffect.Joker) &&
+        cards.length === 1 &&
+        cards[0].rank === "3" &&
+        cards[0].suit === "S" &&
+        !cards[0].isJoker()
+    ) {
+        events.push({ type: "threeSpadeCounter", playerId });
+    }
 
     // Remove cards from hand
     const newHand = [...state.hands[playerId]];
@@ -380,7 +407,7 @@ export function dispatch(
         case "completeTrade":
             return applyTrade(state, action.playerId, action.cards);
         case "play":
-            return applyMoveInternal(state, action.playerId, action.cards);
+            return applyMoveInternal(state, action.playerId, action.cards, action.wildcardRank);
         case "pass":
             return applyPassInternal(state, action.playerId);
         case "endMatch": {

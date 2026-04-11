@@ -2,28 +2,34 @@ import { getRankOrder } from "../core/constants";
 import {
     type Card,
     type GameState,
+    type LegalPlay,
     type PlayerId,
+    type Rank,
     PlayPattern,
 } from "../core/types";
 import { getLegalPlays } from "../rules/validation";
 
-const SUIT_ORDER = { D: 0, C: 1, H: 2, S: 3 } as const;
+const SUIT_ORDER = { D: 0, C: 1, H: 2, S: 3, RJ: 4, BJ: 5 } as const;
 
 /** Lowest play first: shorter patterns before longer; then rank; then suit. */
 function sortPlaysLowestFirst(
-    plays: Card[][],
+    plays: LegalPlay[],
     rankOrder: ReturnType<typeof getRankOrder>,
-): Card[][] {
+): LegalPlay[] {
     return [...plays].sort((a, b) => {
-        if (a.length !== b.length) return a.length - b.length;
-        const ra = rankOrder[a[0]!.rank] - rankOrder[b[0]!.rank];
+        if (a.cards.length !== b.cards.length) return a.cards.length - b.cards.length;
+        // Use effective rank for comparison
+        const rankA = a.wildcardRank ?? a.cards[0]!.rank;
+        const rankB = b.wildcardRank ?? b.cards[0]!.rank;
+        const ra = rankOrder[rankA] - rankOrder[rankB];
         if (ra !== 0) return ra;
-        return SUIT_ORDER[a[0]!.suit] - SUIT_ORDER[b[0]!.suit];
+        return (SUIT_ORDER[a.cards[0]!.suit as keyof typeof SUIT_ORDER] ?? 0) -
+               (SUIT_ORDER[b.cards[0]!.suit as keyof typeof SUIT_ORDER] ?? 0);
     });
 }
 
 export type BotPlayChoice =
-    | { type: "play"; cards: Card[] }
+    | { type: "play"; cards: Card[]; wildcardRank?: Rank }
     | { type: "pass" };
 
 /**
@@ -41,23 +47,29 @@ export function chooseBotPlay(
 
     if (state.trick.topPlay !== null) {
         if (legal.length === 0) return { type: "pass" };
+        const sorted = sortPlaysLowestFirst(legal, rankOrder);
+        const pick = sorted[0]!;
         return {
             type: "play",
-            cards: sortPlaysLowestFirst(legal, rankOrder)[0]!,
+            cards: pick.cards,
+            wildcardRank: pick.wildcardRank,
         };
     }
 
-    const rev = legal.filter((c) => c.length === 4);
+    const rev = legal.filter((c) => c.cards.length === 4);
     if (rev.length > 0) {
+        const sorted = sortPlaysLowestFirst(rev, rankOrder);
+        const pick = sorted[0]!;
         return {
             type: "play",
-            cards: sortPlaysLowestFirst(rev, rankOrder)[0]!,
+            cards: pick.cards,
+            wildcardRank: pick.wildcardRank,
         };
     }
 
     const availablePatterns = (
         [PlayPattern.One, PlayPattern.Two, PlayPattern.Three] as const
-    ).filter((p) => legal.some((c) => c.length === p + 1));
+    ).filter((p) => legal.some((c) => c.cards.length === p + 1));
 
     if (availablePatterns.length > 0) {
         const pick =
@@ -65,10 +77,13 @@ export function chooseBotPlay(
                 Math.floor(random() * availablePatterns.length)
             ]!;
         const size = pick + 1;
-        const subset = legal.filter((c) => c.length === size);
+        const subset = legal.filter((c) => c.cards.length === size);
+        const sorted = sortPlaysLowestFirst(subset, rankOrder);
+        const chosen = sorted[0]!;
         return {
             type: "play",
-            cards: sortPlaysLowestFirst(subset, rankOrder)[0]!,
+            cards: chosen.cards,
+            wildcardRank: chosen.wildcardRank,
         };
     }
 
@@ -76,8 +91,11 @@ export function chooseBotPlay(
         return { type: "pass" };
     }
 
+    const sorted = sortPlaysLowestFirst(legal, rankOrder);
+    const pick = sorted[0]!;
     return {
         type: "play",
-        cards: sortPlaysLowestFirst(legal, rankOrder)[0]!,
+        cards: pick.cards,
+        wildcardRank: pick.wildcardRank,
     };
 }

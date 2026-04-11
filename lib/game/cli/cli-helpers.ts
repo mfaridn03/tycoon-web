@@ -3,7 +3,9 @@ import {
     type Card,
     type GameEvent,
     type GameState,
+    type LegalPlay,
     type PlayerId,
+    type Rank,
     type RankOrder,
 } from "../core/types";
 
@@ -27,6 +29,9 @@ export function playerLabel(id: PlayerId): string {
 // ---------------------------------------------------------------------------
 
 export function formatCard(card: Card): string {
+    if (card.isJoker()) {
+        return card.suit === "RJ" ? "★R" : "★B";
+    }
     return `${card.rank}${card.suit}`;
 }
 
@@ -38,8 +43,15 @@ export function formatCards(cards: Card[]): string {
 // Sorting
 // ---------------------------------------------------------------------------
 
+const SUIT_ORDER = { D: 0, C: 1, H: 2, S: 3, RJ: 4, BJ: 5 } as const;
+
 export function sortCards(cards: Card[], rankOrder: RankOrder): Card[] {
-    return [...cards].sort((a, b) => rankOrder[a.rank] - rankOrder[b.rank]);
+    return [...cards].sort((a, b) => {
+        const rd = rankOrder[a.rank] - rankOrder[b.rank];
+        if (rd !== 0) return rd;
+        return (SUIT_ORDER[a.suit as keyof typeof SUIT_ORDER] ?? 0) -
+               (SUIT_ORDER[b.suit as keyof typeof SUIT_ORDER] ?? 0);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +62,7 @@ export interface PlayOption {
     index: number;
     label: string;
     cards: Card[];
+    wildcardRank?: Rank;
 }
 
 export type TrickHistoryEntry =
@@ -57,19 +70,28 @@ export type TrickHistoryEntry =
     | { type: "pass"; playerId: PlayerId };
 
 export function buildPlayOptions(
-    legalPlays: Card[][],
+    legalPlays: LegalPlay[],
     rankOrder: RankOrder,
 ): PlayOption[] {
     const sorted = [...legalPlays].sort((a, b) => {
-        if (a.length !== b.length) return a.length - b.length;
-        return rankOrder[a[0].rank] - rankOrder[b[0].rank];
+        if (a.cards.length !== b.cards.length) return a.cards.length - b.cards.length;
+        const rankA = a.wildcardRank ?? a.cards[0].rank;
+        const rankB = b.wildcardRank ?? b.cards[0].rank;
+        return rankOrder[rankA] - rankOrder[rankB];
     });
 
-    return sorted.map((cards, i) => ({
-        index: i + 1,
-        label: formatCards(cards),
-        cards,
-    }));
+    return sorted.map((lp, i) => {
+        let label = formatCards(lp.cards);
+        if (lp.wildcardRank) {
+            label += ` (as ${lp.wildcardRank})`;
+        }
+        return {
+            index: i + 1,
+            label,
+            cards: lp.cards,
+            wildcardRank: lp.wildcardRank,
+        };
+    });
 }
 
 export function canPass(state: GameState): boolean {
@@ -131,6 +153,10 @@ export function formatEvent(event: GameEvent): string | null {
             return `\n=== MATCH OVER! ${playerLabel(event.winner)} wins! ===`;
         case "trickEnded":
             return `Trick won by ${playerLabel(event.winner)}. New trick starts.`;
+        case "jokerWildcard":
+            return `${playerLabel(event.playerId)} played joker as ${event.asRank}`;
+        case "threeSpadeCounter":
+            return `${playerLabel(event.playerId)} countered joker with 3♠!`;
         default:
             return null;
     }
