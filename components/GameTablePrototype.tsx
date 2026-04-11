@@ -740,6 +740,7 @@ export function GameTablePrototype() {
   const eightStopClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [tradeReceivedCards, setTradeReceivedCards] = useState<Card[] | null>(null);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   // Cleanup pass timers on unmount
   useEffect(
@@ -1231,7 +1232,7 @@ export function GameTablePrototype() {
               </div>
               <button
                 type="button"
-                onClick={handleEndMatch}
+                onClick={() => setShowEndConfirm(true)}
                 className="pointer-events-auto mt-1 rounded bg-red-900/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-100 shadow ring-1 ring-red-500/50 transition hover:bg-red-800 active:scale-[0.98] drop-shadow-md backdrop-blur-sm"
               >
                 End Game
@@ -1441,6 +1442,37 @@ export function GameTablePrototype() {
             >
               Continue
             </button>
+          </div>
+        </div>
+      )}
+
+      {showEndConfirm && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer"
+          onClick={() => setShowEndConfirm(false)}
+        >
+          <div className="flex flex-col items-center gap-6 cursor-default rounded-2xl bg-emerald-950/90 px-8 py-6 shadow-2xl ring-1 ring-emerald-500/30 text-center" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold tracking-wide text-emerald-50">End Game?</h2>
+            <p className="text-sm text-emerald-100/90 max-w-[240px]">
+              Are you sure you want to end the current game? All progress will be lost.
+            </p>
+            <div className="flex gap-3 mt-2 w-full">
+              <button
+                className="flex-1 rounded-full bg-red-900 px-4 py-2.5 text-sm font-bold text-red-100 shadow transition hover:bg-red-800 active:scale-[0.98] ring-1 ring-red-500/50"
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  handleEndMatch();
+                }}
+              >
+                End Game
+              </button>
+              <button
+                className="flex-1 rounded-full bg-emerald-800 px-4 py-2.5 text-sm font-bold text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98] ring-1 ring-emerald-600/50"
+                onClick={() => setShowEndConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
