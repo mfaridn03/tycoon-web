@@ -12,7 +12,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const PLAYER_LABELS: Record<PlayerId, string> = {
-    0: "Player X",
+    0: "You",
     1: "Player B",
     2: "Player C",
     3: "Player D",
