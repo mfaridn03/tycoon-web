@@ -383,5 +383,13 @@ export function dispatch(
             return applyMoveInternal(state, action.playerId, action.cards);
         case "pass":
             return applyPassInternal(state, action.playerId);
+        case "endMatch": {
+            const winner = getMatchWinner(state.scores);
+            return {
+                ok: true,
+                state: { ...state, matchFinished: true, revolutionActive: false },
+                events: [{ type: "matchFinished", winner }]
+            };
+        }
     }
 }

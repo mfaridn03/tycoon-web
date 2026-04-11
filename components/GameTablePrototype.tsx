@@ -812,6 +812,20 @@ export function GameTablePrototype() {
     });
   }, [clearCenterState]);
 
+  const handleEndMatch = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "endMatch" });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      queueMicrotask(() => setTablePhase("roundOver"));
+      return r.state;
+    });
+  }, []);
+
   const onPlayerDealComplete = useCallback(() => {
     const gs = gameStateRef.current;
     if (gs && gs.phase === RoundPhase.Trade) {
@@ -1186,20 +1200,29 @@ export function GameTablePrototype() {
 
         <div className="relative flex min-h-dvh flex-col px-2 pb-6 pt-3">
           {showTable && gameState && (
-            <div className="pointer-events-none absolute left-2 top-2 z-20 flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/95">
-                Scores
-              </p>
-              <ul className="flex flex-col gap-0.5 text-xs text-emerald-50">
-                {playersByScoreDesc(gameState.scores).map((id) => (
-                  <li key={id} className="tabular-nums">
-                    <span className="font-medium text-emerald-100">
-                      {TABLE_PLAYER_NAMES[id]}
-                    </span>
-                    <span className="text-emerald-200/85"> {gameState.scores[id]}</span>
-                  </li>
-                ))}
-              </ul>
+            <div className="pointer-events-none absolute left-2 top-2 z-20 flex items-start gap-2">
+              <div className="flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/95">
+                  Scores
+                </p>
+                <ul className="flex flex-col gap-0.5 text-xs text-emerald-50">
+                  {playersByScoreDesc(gameState.scores).map((id) => (
+                    <li key={id} className="tabular-nums">
+                      <span className="font-medium text-emerald-100">
+                        {TABLE_PLAYER_NAMES[id]}
+                      </span>
+                      <span className="text-emerald-200/85"> {gameState.scores[id]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={handleEndMatch}
+                className="pointer-events-auto mt-1 rounded bg-red-900/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-100 shadow ring-1 ring-red-500/50 transition hover:bg-red-800 active:scale-[0.98] drop-shadow-md backdrop-blur-sm"
+              >
+                End Game
+              </button>
             </div>
           )}
 

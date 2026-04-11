@@ -44,5 +44,5 @@ export const SCORE_TABLE: Record<PlayerRank, number> = {
     [PlayerRank.Beggar]: 0,
 };
 
-export const TOTAL_ROUNDS = 3;
+export const TOTAL_ROUNDS = Infinity;
 export const CARDS_PER_PLAYER = 13;

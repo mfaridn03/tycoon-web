@@ -220,7 +220,8 @@ export type GameAction =
     | { type: "startRound" }
     | { type: "completeTrade"; playerId: PlayerId; cards: Card[] }
     | { type: "play"; playerId: PlayerId; cards: Card[] }
-    | { type: "pass"; playerId: PlayerId };
+    | { type: "pass"; playerId: PlayerId }
+    | { type: "endMatch" };
 
 export type ActionResult =
     | { ok: true; state: GameState; events: GameEvent[] }
