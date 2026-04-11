@@ -236,13 +236,14 @@ function applyMoveInternal(
     }
 
     // Emit 3♠ counter event
-    if (
+    const isThreeSpadeCounter =
         state.trick.topPlay?.effects.has(PlayEffect.Joker) &&
         cards.length === 1 &&
         cards[0].rank === "3" &&
         cards[0].suit === "S" &&
-        !cards[0].isJoker()
-    ) {
+        !cards[0].isJoker();
+
+    if (isThreeSpadeCounter) {
         events.push({ type: "threeSpadeCounter", playerId });
     }
 
@@ -323,9 +324,11 @@ function applyMoveInternal(
         return { ok: true, state: roundEnd.state, events };
     }
 
-    // 8 Stop: trick ends immediately, this player leads next
-    if (play.effects.has(PlayEffect.EightStop)) {
-        events.push({ type: "eightStop", playerId });
+    // Trick-ending effects: 8 Stop or 3♠ beating Joker
+    if (play.effects.has(PlayEffect.EightStop) || isThreeSpadeCounter) {
+        if (play.effects.has(PlayEffect.EightStop)) {
+            events.push({ type: "eightStop", playerId });
+        }
         const trickEnd = endTrick(
             { ...s, finishOrder, finishedPlayers },
             playerId,
