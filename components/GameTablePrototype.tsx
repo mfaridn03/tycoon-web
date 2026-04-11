@@ -869,12 +869,15 @@ export function GameTablePrototype() {
     });
   }, []);
 
-  // Bot turns — 1 second delay for pacing
+  // Bot turns — dynamic delay for pacing
   useEffect(() => {
     if (tablePhase !== "playing" || !gameState) return;
     if (gameState.phase !== RoundPhase.Play) return;
     if (gameState.activePlayerId === HUMAN_ID) return;
     if (tradeReceivedCards !== null) return;
+
+    const isHumanOut = gameState.finishedPlayers.includes(HUMAN_ID) || gameState.demotedTycoonId === HUMAN_ID;
+    const delay = isHumanOut ? 250 : 1000;
 
     const t = setTimeout(() => {
       setGameState((prev) => {
@@ -893,7 +896,7 @@ export function GameTablePrototype() {
         }
         return r.state;
       });
-    }, 1000);
+    }, delay);
     return () => clearTimeout(t);
   }, [gameState, tablePhase, tradeReceivedCards]);
 
@@ -1404,7 +1407,7 @@ export function GameTablePrototype() {
       )}
 
       {tradeReceivedCards && (
-        <div 
+        <div
           className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer"
           onClick={() => setTradeReceivedCards(null)}
         >
@@ -1413,7 +1416,7 @@ export function GameTablePrototype() {
             <div className="flex justify-center scale-[1.2] my-4">
               <FaceUpCards cards={tradeReceivedCards} />
             </div>
-            <button 
+            <button
               className="mt-2 rounded-full bg-white px-8 py-2.5 text-sm font-bold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
               onClick={() => setTradeReceivedCards(null)}
             >
