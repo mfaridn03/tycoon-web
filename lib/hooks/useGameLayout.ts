@@ -64,6 +64,12 @@ function roundScale(scale: number, n: number): number {
   return Math.max(1, Math.round(n * scale));
 }
 
+const DEFAULT_SERVER_LAYOUT = computeGameTableLayout(1024, 768);
+
+let cachedViewportWidth = 1024;
+let cachedViewportHeight = 768;
+let cachedLayout = DEFAULT_SERVER_LAYOUT;
+
 /**
  * Responsive scale: shrink on narrow or short viewports.
  * Reference: ~430×750 comfortable table size.
@@ -150,13 +156,22 @@ function subscribe(onStoreChange: () => void) {
 
 function getSnapshot(): GameTableLayout {
   if (typeof window === "undefined") {
-    return computeGameTableLayout(1024, 768);
+    return DEFAULT_SERVER_LAYOUT;
   }
-  return computeGameTableLayout(window.innerWidth, window.innerHeight);
+
+  const { innerWidth, innerHeight } = window;
+  if (innerWidth === cachedViewportWidth && innerHeight === cachedViewportHeight) {
+    return cachedLayout;
+  }
+
+  cachedViewportWidth = innerWidth;
+  cachedViewportHeight = innerHeight;
+  cachedLayout = computeGameTableLayout(innerWidth, innerHeight);
+  return cachedLayout;
 }
 
 function getServerSnapshot(): GameTableLayout {
-  return computeGameTableLayout(1024, 768);
+  return DEFAULT_SERVER_LAYOUT;
 }
 
 export function useGameLayout(): GameTableLayout {
