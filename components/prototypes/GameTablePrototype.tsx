@@ -13,12 +13,7 @@ import { CardDemo } from "@/components/prototypes/CardDemo";
 import { CardBack } from "@/components/cards/CardBack";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { chooseBotPlay } from "@/lib/game/bots/bots";
-import {
-  canPass,
-  formatScores,
-  formatTradeRequirement,
-  playerLabel,
-} from "@/lib/game/cli/cli-helpers";
+import { canPass, playerLabel } from "@/lib/game/cli/cli-helpers";
 import { getMatchWinner } from "@/lib/game/scoring/scoring";
 import {
   buildBotTradeAction,
@@ -735,7 +730,10 @@ export function GameTablePrototype() {
   const [dealingStackProgress, setDealingStackProgress] = useState(0);
   const [playError, setPlayError] = useState<string | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
-  gameStateRef.current = gameState;
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   // Center play display state
   const [centerCurrent, setCenterCurrent] = useState<CenterCardEntry | null>(null);

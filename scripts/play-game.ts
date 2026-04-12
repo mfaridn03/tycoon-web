@@ -20,7 +20,6 @@ import {
     type GameEvent,
     type GameState,
     type PlayerId,
-    type Rank,
     PlayerRank,
     RoundPhase,
 } from "../lib/game/core/types";

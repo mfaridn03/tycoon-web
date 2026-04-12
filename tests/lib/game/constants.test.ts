@@ -3,7 +3,6 @@ import {
     createDeck,
     getRankOrder,
     REVERSED_RANK_ORDER,
-    SUITS,
 } from "@/lib/game/core/constants";
 import {
     DEFAULT_RANK_ORDER,

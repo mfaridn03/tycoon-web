@@ -473,7 +473,7 @@ export function CardDemo({
               const allJokers = selCards.length > 0 && selCards.every(c => c.isJoker());
 
               // Compute available wildcard ranks for the selected joker cards
-              let jokerRankOptions: (Rank | undefined)[] = [];
+              const jokerRankOptions: (Rank | undefined)[] = [];
               if (allJokers && legalPlays) {
                 const selKeys = new Set(selCards.map(c => `${c.rank}:${c.suit}`));
                 const matching = legalPlays.filter(lp => {
