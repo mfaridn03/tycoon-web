@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { GameTablePrototype } from "@/components/GameTablePrototype";
+import { GameTablePrototype } from "@/components/prototypes/GameTablePrototype";
 
 export const metadata: Metadata = {
   title: "Table prototype",

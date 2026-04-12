@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
-import { CardDemo } from "@/components/CardDemo";
+import { CardDemo } from "@/components/prototypes/CardDemo";
 import { CardBack } from "@/components/cards/CardBack";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { chooseBotPlay } from "@/lib/game/bots";
