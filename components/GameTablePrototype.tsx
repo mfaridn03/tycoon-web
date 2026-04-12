@@ -96,11 +96,13 @@ type CenterCardEntry = {
   cards: Card[];
   playerId: PlayerId;
   animKey: number;
+  wildcardRank?: Rank;
 };
 
 type CenterPrevEntry = {
   cards: Card[];
   playerId: PlayerId;
+  wildcardRank?: Rank;
 };
 
 // ---------------------------------------------------------------------------
@@ -415,7 +417,7 @@ function BotHandStrip({
 // Face-up cards (SVG row, no interaction)
 // ---------------------------------------------------------------------------
 
-function FaceUpCards({ cards }: { cards: Card[] }) {
+function FaceUpCards({ cards, wildcardRank }: { cards: Card[]; wildcardRank?: Rank }) {
   return (
     <div style={{ display: "flex", gap: 4 }}>
       {cards.map((card, i) => (
@@ -426,7 +428,11 @@ function FaceUpCards({ cards }: { cards: Card[] }) {
           height={PLAY_CARD_H}
           style={{ display: "block", flexShrink: 0 }}
         >
-          <CardFaceContent rank={card.rank} suit={card.suit} />
+          <CardFaceContent
+            rank={card.rank}
+            suit={card.suit}
+            mimickedRank={card.isJoker() ? wildcardRank : undefined}
+          />
         </svg>
       ))}
     </div>
@@ -440,9 +446,11 @@ function FaceUpCards({ cards }: { cards: Card[] }) {
 function AnimatedPlayedCards({
   cards,
   playerId,
+  wildcardRank,
 }: {
   cards: Card[];
   playerId: PlayerId;
+  wildcardRank?: Rank;
 }) {
   const [phase, setPhase] = useState<PlayedCardPhase>("initial");
 
@@ -477,7 +485,7 @@ function AnimatedPlayedCards({
 
   return (
     <div style={style}>
-      <FaceUpCards cards={cards} />
+      <FaceUpCards cards={cards} wildcardRank={wildcardRank} />
     </div>
   );
 }
@@ -557,7 +565,7 @@ function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId
         marginBottom: -(PLAY_CARD_H * 0.45),
       }}
     >
-      <FaceUpCards cards={displayed.cards} />
+      <FaceUpCards cards={displayed.cards} wildcardRank={displayed.wildcardRank} />
     </div>
   );
 }
@@ -638,6 +646,7 @@ function FadingCurrent({
         key={displayed.animKey}
         cards={displayed.cards}
         playerId={playerId}
+        wildcardRank={displayed.wildcardRank}
       />
     </div>
   );
@@ -1001,11 +1010,13 @@ export function GameTablePrototype() {
         cards: curr.topPlay.cards,
         playerId: curr.topPlayerId!,
         animKey: ++animKeyRef.current,
+        wildcardRank: curr.topPlay.wildcardRank ?? undefined,
       };
-      const prevEntry = centerCurrentRef.current
+      const prevEntry: CenterPrevEntry | null = centerCurrentRef.current
         ? {
           cards: centerCurrentRef.current.cards,
           playerId: centerCurrentRef.current.playerId,
+          wildcardRank: centerCurrentRef.current.wildcardRank,
         }
         : null;
       centerCurrentRef.current = newEntry;
@@ -1035,6 +1046,7 @@ export function GameTablePrototype() {
         const prevEntry: CenterPrevEntry = {
           cards: prev.topPlay.cards,
           playerId: prev.topPlayerId!,
+          wildcardRank: prev.topPlay.wildcardRank ?? undefined,
         };
         centerCurrentRef.current = entry8;
         queueMicrotask(() => {

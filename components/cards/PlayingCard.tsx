@@ -19,21 +19,21 @@ const NON_SELECTABLE_STYLE = {
   msUserSelect: "none",
 } as const;
 
-function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string }) {
+function CornerIndex({ rank, suit, hex, mimickedRank }: { rank: Rank; suit: Suit; hex: string; mimickedRank?: Rank }) {
   if (rank === "JK") {
     return (
       <g>
         <text
           x="5"
           y="16"
-          fontSize="14"
+          fontSize={mimickedRank ? "16" : "14"}
           fontWeight="700"
           fill={hex}
           fontFamily="system-ui, -apple-system, sans-serif"
           dominantBaseline="auto"
           style={NON_SELECTABLE_STYLE}
         >
-          ★
+          {mimickedRank ?? "★"}
         </text>
       </g>
     );
@@ -68,7 +68,7 @@ function CornerIndex({ rank, suit, hex }: { rank: Rank; suit: Suit; hex: string 
 }
 
 /** SVG children only — no wrapper div, no interaction. Use inside your own <svg>. */
-export function CardFaceContent({ rank, suit }: { rank: Rank; suit: Suit }) {
+export function CardFaceContent({ rank, suit, mimickedRank }: { rank: Rank; suit: Suit; mimickedRank?: Rank }) {
   const { hex } = SUIT_META[suit];
 
   if (rank === "JK") {
@@ -85,42 +85,74 @@ export function CardFaceContent({ rank, suit }: { rank: Rank; suit: Suit }) {
           strokeWidth="1"
         />
 
-        <CornerIndex rank={rank} suit={suit} hex={hex} />
+        <CornerIndex rank={rank} suit={suit} hex={hex} mimickedRank={mimickedRank} />
 
         <g transform="rotate(180 40 56)">
-          <CornerIndex rank={rank} suit={suit} hex={hex} />
+          <CornerIndex rank={rank} suit={suit} hex={hex} mimickedRank={mimickedRank} />
         </g>
 
-        {/* Large star */}
-        <text
-          x="40"
-          y="48"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="32"
-          fontWeight="700"
-          fill={hex}
-          fontFamily="system-ui, -apple-system, sans-serif"
-          style={NON_SELECTABLE_STYLE}
-        >
-          ★
-        </text>
-
-        {/* JOKER label */}
-        <text
-          x="40"
-          y="72"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="10"
-          fontWeight="700"
-          fill={hex}
-          fontFamily="system-ui, -apple-system, sans-serif"
-          letterSpacing="1"
-          style={NON_SELECTABLE_STYLE}
-        >
-          JOKER
-        </text>
+        {mimickedRank ? (
+          <>
+            <text
+              x="40"
+              y="48"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="36"
+              fontWeight="700"
+              fill={hex}
+              fontFamily="system-ui, -apple-system, sans-serif"
+              style={NON_SELECTABLE_STYLE}
+            >
+              {mimickedRank}
+            </text>
+            <text
+              x="40"
+              y="72"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="9"
+              fontWeight="700"
+              fill={hex}
+              fontFamily="system-ui, -apple-system, sans-serif"
+              letterSpacing="1"
+              opacity="0.7"
+              style={NON_SELECTABLE_STYLE}
+            >
+              JOKER
+            </text>
+          </>
+        ) : (
+          <>
+            <text
+              x="40"
+              y="48"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="32"
+              fontWeight="700"
+              fill={hex}
+              fontFamily="system-ui, -apple-system, sans-serif"
+              style={NON_SELECTABLE_STYLE}
+            >
+              ★
+            </text>
+            <text
+              x="40"
+              y="72"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="10"
+              fontWeight="700"
+              fill={hex}
+              fontFamily="system-ui, -apple-system, sans-serif"
+              letterSpacing="1"
+              style={NON_SELECTABLE_STYLE}
+            >
+              JOKER
+            </text>
+          </>
+        )}
       </>
     );
   }

@@ -83,6 +83,7 @@ export function CardDemo({
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
   );
+  const [selectedJokerRank, setSelectedJokerRank] = useState<string>("JK");
   const selectedIndicesRef = useRef(selectedIndices);
   selectedIndicesRef.current = selectedIndices;
   const [dealPhase, setDealPhase] = useState<DealPhase>("idle");
@@ -292,6 +293,11 @@ export function CardDemo({
     onDealComplete?.();
   }, [dealPhase, onDealComplete]);
 
+  // Reset joker rank choice when selection changes
+  useEffect(() => {
+    setSelectedJokerRank("JK");
+  }, [selectedIndices]);
+
   // When it's not our turn anymore, clear selection (prevents stale highlight).
   useEffect(() => {
     if (playMode || tradeMode) return;
@@ -462,50 +468,93 @@ export function CardDemo({
               </div>
             </>
           ) : showPlayModeBar && playMode ? (
-            <>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {playMode.canPass && (
-                  <button
-                    type="button"
-                    onClick={() => playMode.onPass()}
-                    data-card-demo-interactive="true"
-                    className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-white active:bg-zinc-300"
-                  >
-                    Pass
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const idxs = [...selectedIndices].sort((a, b) => a - b);
-                    const cards = idxs.map((i) => drawnCards[i]!);
-                    // Find matching legal play to get wildcardRank
-                    let wildcardRank: Rank | undefined;
-                    if (legalPlays) {
-                      const cardKeys = new Set(cards.map(c => `${c.rank}:${c.suit}`));
-                      const match = legalPlays.find(lp => {
-                        if (lp.cards.length !== cards.length) return false;
-                        const lpKeys = new Set(lp.cards.map(c => `${c.rank}:${c.suit}`));
-                        for (const k of cardKeys) { if (!lpKeys.has(k)) return false; }
-                        return true;
-                      });
-                      wildcardRank = match?.wildcardRank;
-                    }
-                    playMode.onPlay(cards, wildcardRank);
-                  }}
-                  disabled={selectedIndices.size === 0}
-                  data-card-demo-interactive="true"
-                  className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-100 active:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Play selected
-                </button>
-              </div>
-              <div className="min-h-4">
-                {playMode.playError ? (
-                  <p className="text-center text-xs text-red-300">{playMode.playError}</p>
-                ) : null}
-              </div>
-            </>
+            (() => {
+              const selCards = [...selectedIndices].sort((a, b) => a - b).map(i => drawnCards[i]!);
+              const allJokers = selCards.length > 0 && selCards.every(c => c.isJoker());
+
+              // Compute available wildcard ranks for the selected joker cards
+              let jokerRankOptions: (Rank | undefined)[] = [];
+              if (allJokers && legalPlays) {
+                const selKeys = new Set(selCards.map(c => `${c.rank}:${c.suit}`));
+                const matching = legalPlays.filter(lp => {
+                  if (lp.cards.length !== selCards.length) return false;
+                  const lpKeys = new Set(lp.cards.map(c => `${c.rank}:${c.suit}`));
+                  for (const k of selKeys) { if (!lpKeys.has(k)) return false; }
+                  return true;
+                });
+                const seen = new Set<string>();
+                for (const lp of matching) {
+                  const key = lp.wildcardRank ?? "JK";
+                  if (!seen.has(key)) {
+                    seen.add(key);
+                    jokerRankOptions.push(lp.wildcardRank);
+                  }
+                }
+              }
+              const showJokerDropdown = allJokers && jokerRankOptions.length > 1;
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {playMode.canPass && (
+                      <button
+                        type="button"
+                        onClick={() => playMode.onPass()}
+                        data-card-demo-interactive="true"
+                        className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-white active:bg-zinc-300"
+                      >
+                        Pass
+                      </button>
+                    )}
+                    {showJokerDropdown && (
+                      <select
+                        value={selectedJokerRank}
+                        onChange={(e) => setSelectedJokerRank(e.target.value)}
+                        data-card-demo-interactive="true"
+                        className="rounded-full bg-zinc-800 px-3 py-2 text-sm font-medium text-white ring-1 ring-zinc-600 transition-colors hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      >
+                        {jokerRankOptions.map((r) => (
+                          <option key={r ?? "JK"} value={r ?? "JK"}>
+                            {r ? `Play as ${r}` : "Joker"}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cards = selCards;
+                        let wildcardRank: Rank | undefined;
+                        if (allJokers && selectedJokerRank !== "JK") {
+                          wildcardRank = selectedJokerRank as Rank;
+                        } else if (!allJokers && legalPlays) {
+                          const cardKeys = new Set(cards.map(c => `${c.rank}:${c.suit}`));
+                          const match = legalPlays.find(lp => {
+                            if (lp.cards.length !== cards.length) return false;
+                            const lpKeys = new Set(lp.cards.map(c => `${c.rank}:${c.suit}`));
+                            for (const k of cardKeys) { if (!lpKeys.has(k)) return false; }
+                            return true;
+                          });
+                          wildcardRank = match?.wildcardRank;
+                        }
+                        playMode.onPlay(cards, wildcardRank);
+                      }}
+                      disabled={selectedIndices.size === 0}
+                      data-card-demo-interactive="true"
+                      className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-emerald-100 active:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Play selected
+                    </button>
+                  </div>
+                  <div className="min-h-4">
+                    {playMode.playError ? (
+                      <p className="text-center text-xs text-red-300">{playMode.playError}</p>
+                    ) : null}
+                  </div>
+                </>
+              );
+            })()
+          
           ) : (
             <div aria-hidden="true" className="invisible flex w-full flex-col items-center gap-2">
               <div className="flex flex-wrap items-center justify-center gap-2">

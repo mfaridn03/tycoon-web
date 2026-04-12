@@ -1,4 +1,4 @@
-import { getRankOrder } from "../core/constants";
+import { getRankOrder, STANDARD_RANKS } from "../core/constants";
 import {
     type Card,
     type GameState,
@@ -300,6 +300,28 @@ export function getLegalPlays(
         results.push({ cards: [joker] });
     }
 
+    // --- Solo joker wildcard-rank variants ---
+    for (const joker of jokers) {
+        if (!sizes.includes(1)) continue;
+        if (mustInclude3D) continue;
+
+        for (const rank of STANDARD_RANKS) {
+            if (trick.topPlay !== null) {
+                const play = new Play([joker], rank);
+                if (!play.higherThan(trick.topPlay, rankOrder)) continue;
+            }
+            const isDuplicate = results.some(
+                (r) =>
+                    r.cards.length === 1 &&
+                    r.cards[0].equals(joker) &&
+                    r.wildcardRank === rank,
+            );
+            if (!isDuplicate) {
+                results.push({ cards: [joker], wildcardRank: rank });
+            }
+        }
+    }
+
     // --- Pair of jokers (as themselves) — unbeatable ---
     if (jokers.length === 2 && sizes.includes(2)) {
         if (!mustInclude3D) {
@@ -311,6 +333,17 @@ export function getLegalPlays(
             } else {
                 results.push({ cards: [...jokers] });
             }
+        }
+    }
+
+    // --- Pair of jokers wildcard-rank variants ---
+    if (jokers.length === 2 && sizes.includes(2) && !mustInclude3D) {
+        for (const rank of STANDARD_RANKS) {
+            if (trick.topPlay !== null) {
+                const play = new Play([...jokers], rank);
+                if (!play.higherThan(trick.topPlay, rankOrder)) continue;
+            }
+            results.push({ cards: [...jokers], wildcardRank: rank });
         }
     }
 
