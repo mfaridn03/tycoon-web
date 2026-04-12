@@ -16,6 +16,7 @@ import type { Card, LegalPlay, Rank } from "@/lib/game/core/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
+import type { GameTableLayout } from "@/lib/hooks/useGameLayout";
 
 /** 54-card deck → two players get 14, so max hand size is 14. */
 const MAX_HAND_SIZE = 14;
@@ -65,6 +66,8 @@ export type CardDemoProps = {
   tradeMode?: CardDemoTradeMode | null;
   /** Shown in embedded mode between the play/trade bar and the hand (e.g. previous-round rank). */
   playerRankLabel?: string | null;
+  /** When set (e.g. from `useGameLayout`), hand + bar use scaled dimensions. */
+  layout?: GameTableLayout | null;
 };
 
 export function CardDemo({
@@ -78,7 +81,14 @@ export function CardDemo({
   playMode = null,
   tradeMode = null,
   playerRankLabel = null,
+  layout = null,
 }: CardDemoProps) {
+  const cardW = layout?.cardW ?? CARD_W;
+  const cardH = layout?.cardH ?? CARD_H;
+  const cardStep = layout?.cardStep ?? CARD_STEP;
+  const playModeBarMinH = layout?.playModeBarMinH ?? PLAY_MODE_BAR_MIN_H;
+  const selectionLiftPx = layout?.selectionLiftPx ?? 20;
+  const exitLiftPx = layout ? Math.max(8, Math.round(18 * layout.scale)) : 18;
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
@@ -245,7 +255,7 @@ export function CardDemo({
     setFlyOffsets(offsets);
 
     setDealPhase("atStack");
-  }, [dealPhase, drawnCards, stackRef]);
+  }, [dealPhase, drawnCards, stackRef, cardW, cardH, cardStep]);
 
   // atStack → double-rAF (guarantees a paint) → flying
   useEffect(() => {
@@ -317,7 +327,7 @@ export function CardDemo({
   }
 
   function getSlotStyle(index: number): React.CSSProperties {
-    const handOffset = (index - (drawnCards.length - 1) / 2) * CARD_STEP;
+    const handOffset = (index - (drawnCards.length - 1) / 2) * cardStep;
     const baseTransform = `translateX(${handOffset}px)`;
 
     const offset = flyOffsets[index] ?? { x: 0, y: 0 };
@@ -340,7 +350,9 @@ export function CardDemo({
       case "done":
         return {
           transform: `${baseTransform} ${
-            selectedIndices.has(index) ? "translateY(-20px)" : "translateY(0)"
+            selectedIndices.has(index)
+              ? `translateY(-${selectionLiftPx}px)`
+              : "translateY(0)"
           }`,
           transition: "transform 150ms ease",
           opacity: 1,
@@ -410,28 +422,28 @@ export function CardDemo({
       {showOwnStack && (
         <div
           className="relative w-full flex items-center justify-center"
-          style={{ height: CARD_H + 24 }}
+          style={{ height: cardH + 24 }}
         >
           <div
             ref={internalStackRef}
             className={`relative transition-transform duration-300 ${
               isAnimating ? "scale-95" : "scale-100"
             }`}
-            style={{ width: CARD_W, height: CARD_H }}
+            style={{ width: cardW, height: cardH }}
           >
             <div
-              style={{ width: CARD_W, height: CARD_H }}
+              style={{ width: cardW, height: cardH }}
               className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
             >
               <CardBack />
             </div>
             <div
-              style={{ width: CARD_W, height: CARD_H }}
+              style={{ width: cardW, height: cardH }}
               className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
             >
               <CardBack />
             </div>
-            <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
+            <div style={{ width: cardW, height: cardH }} className="relative shadow-lg">
               <CardBack />
             </div>
           </div>
@@ -441,7 +453,7 @@ export function CardDemo({
       {reservePlayModeBarSpace && (
         <div
           className="flex w-full max-w-4xl flex-col items-center justify-start gap-2"
-          style={{ minHeight: PLAY_MODE_BAR_MIN_H }}
+          style={{ minHeight: playModeBarMinH }}
         >
           {showTradeModeBar && tradeMode ? (
             <>
@@ -588,7 +600,7 @@ export function CardDemo({
       {/* Hand */}
       <div
         className="flex items-end justify-center"
-        style={{ minHeight: CARD_H + 20 }}
+        style={{ minHeight: cardH + 20 }}
       >
         {variant === "standalone" &&
           drawnCards.length === 0 &&
@@ -598,9 +610,9 @@ export function CardDemo({
             </p>
           )}
         {drawnCards.length > 0 && (
-          <div className="relative w-full overflow-visible" style={{ height: CARD_H }}>
+          <div className="relative w-full overflow-visible" style={{ height: cardH }}>
             {exitingCards.map(({ card, index, handSize }) => {
-              const handOffset = (index - (handSize - 1) / 2) * CARD_STEP;
+              const handOffset = (index - (handSize - 1) / 2) * cardStep;
               const baseTransform = `translateX(${handOffset}px)`;
               return (
                 <div
@@ -609,10 +621,10 @@ export function CardDemo({
                     position: "absolute",
                     left: "50%",
                     top: 0,
-                    width: CARD_W,
-                    height: CARD_H,
+                    width: cardW,
+                    height: cardH,
                     zIndex: index,
-                    transform: `${baseTransform} translateY(-18px)`,
+                    transform: `${baseTransform} translateY(-${exitLiftPx}px)`,
                     opacity: exitingCardsFading ? 0 : 1,
                     transition: "transform 280ms ease-out, opacity 260ms ease-out",
                     pointerEvents: "none",
@@ -620,8 +632,8 @@ export function CardDemo({
                 >
                   <svg
                     viewBox="0 0 80 112"
-                    width={CARD_W}
-                    height={CARD_H}
+                    width={cardW}
+                    height={cardH}
                     xmlns="http://www.w3.org/2000/svg"
                     style={{ display: "block" }}
                   >
@@ -651,8 +663,8 @@ export function CardDemo({
                     position: "absolute",
                     left: "50%",
                     top: 0,
-                    width: CARD_W,
-                    height: CARD_H,
+                    width: cardW,
+                    height: cardH,
                     zIndex: i,
                     ...getSlotStyle(i),
                   }}
@@ -665,15 +677,15 @@ export function CardDemo({
                   {/* 3-D flip container */}
                   <div
                     style={{
-                      width: CARD_W,
-                      height: CARD_H,
+                      width: cardW,
+                      height: cardH,
                       perspective: 900,
                     }}
                   >
                     <div
                       style={{
-                        width: CARD_W,
-                        height: CARD_H,
+                        width: cardW,
+                        height: cardH,
                         position: "relative",
                         ...getFlipStyle(i),
                       }}
@@ -684,8 +696,8 @@ export function CardDemo({
                           position: "absolute",
                           top: 0,
                           left: 0,
-                          width: CARD_W,
-                          height: CARD_H,
+                          width: cardW,
+                          height: cardH,
                           backfaceVisibility: "hidden",
                           WebkitBackfaceVisibility: "hidden",
                         }}
@@ -699,8 +711,8 @@ export function CardDemo({
                           position: "absolute",
                           top: 0,
                           left: 0,
-                          width: CARD_W,
-                          height: CARD_H,
+                          width: cardW,
+                          height: cardH,
                           backfaceVisibility: "hidden",
                           WebkitBackfaceVisibility: "hidden",
                           transform: "rotateY(180deg)",
@@ -708,8 +720,8 @@ export function CardDemo({
                       >
                         <svg
                           viewBox="0 0 80 112"
-                          width={CARD_W}
-                          height={CARD_H}
+                          width={cardW}
+                          height={cardH}
                           xmlns="http://www.w3.org/2000/svg"
                           style={{ display: "block" }}
                         >
