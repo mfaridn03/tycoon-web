@@ -712,6 +712,7 @@ function AllPlayZones({
 
 export function GameTablePrototype() {
   const layout = useGameLayout();
+  const isCompactPortrait = layout.scale <= 0.72;
   const stackRef = useRef<HTMLDivElement>(null);
   const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -1213,7 +1214,11 @@ export function GameTablePrototype() {
           }}
         />
 
-        <div className="relative flex min-h-dvh flex-col px-2 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]">
+        <div
+          className={`relative flex min-h-dvh flex-col pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] ${
+            isCompactPortrait ? "px-1.5 pt-2" : "px-2 pt-3"
+          }`}
+        >
           {showTable && gameState && (
             <div className="pointer-events-none absolute left-2 top-2 z-20 flex items-start gap-2">
               <div className="flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
@@ -1243,7 +1248,11 @@ export function GameTablePrototype() {
 
           {/* Top bot */}
           {showTable && hands && (
-            <div className="flex shrink-0 justify-center pt-3 pb-1">
+            <div
+              className={`flex shrink-0 justify-center ${
+                isCompactPortrait ? "pt-2 pb-0" : "pt-3 pb-1"
+              }`}
+            >
               <BotHandStrip
                 key={`bot-top-${dealId}`}
                 stackRef={stackRef}
@@ -1257,7 +1266,11 @@ export function GameTablePrototype() {
             </div>
           )}
 
-          <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(48px,auto)_1fr_minmax(48px,auto)] items-center gap-1 px-0">
+          <div
+            className={`relative grid min-h-0 flex-1 grid-cols-[minmax(48px,auto)_1fr_minmax(48px,auto)] items-center px-0 ${
+              isCompactPortrait ? "gap-0" : "gap-1"
+            }`}
+          >
             {showTable && hands && (
               <BotHandStrip
                 key={`bot-left-${dealId}`}
@@ -1273,7 +1286,9 @@ export function GameTablePrototype() {
 
             {/* Center area */}
             <div
-              className="relative flex flex-col items-center justify-center gap-2 px-1"
+              className={`relative flex flex-col items-center justify-center px-1 ${
+                isCompactPortrait ? "gap-1" : "gap-2"
+              }`}
               style={{ minHeight: layout.centerMinH }}
             >
               {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
@@ -1321,7 +1336,7 @@ export function GameTablePrototype() {
 
           {/* Player */}
           {showTable && hands && (
-            <div className="mt-auto w-full pt-2">
+            <div className={`mt-auto w-full ${isCompactPortrait ? "pt-1" : "pt-2"}`}>
               <CardDemo
                 key={dealId}
                 variant="embedded"
@@ -1334,7 +1349,9 @@ export function GameTablePrototype() {
                 tradeMode={tradeMode}
                 playerRankLabel={rankSuffix(HUMAN_ID)}
                 layout={layout}
-                className="flex w-full flex-col items-center gap-3"
+                className={`flex w-full flex-col items-center ${
+                  isCompactPortrait ? "gap-2" : "gap-3"
+                }`}
               />
             </div>
           )}
