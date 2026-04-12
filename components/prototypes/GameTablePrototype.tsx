@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -25,36 +27,22 @@ import { shuffleDeck } from "@/lib/game/utils/shuffle-deck";
 import { getLegalPlays } from "@/lib/game/rules/validation";
 import type { Card, GameEvent, GameState, PlayerId, Rank, TrickState } from "@/lib/game/core/types";
 import { RoundPhase } from "@/lib/game/core/types";
+import { useGameLayout, type GameTableLayout } from "@/lib/hooks/useGameLayout";
 
-const STACK_CARD_W = 96;
-const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));
-
-const PLAY_CARD_W = 72;
-const PLAY_CARD_H = Math.round(PLAY_CARD_W * (112 / 80));
-
-// dx/dy offsets (px) from center of the play area container
-const PLAY_ZONE_OFFSETS: Record<number, [number, number]> = {
-  0: [0, 72],    // human — below center
-  1: [-110, 0],  // bot-left — left of center
-  2: [0, -72],   // bot-top — above center
-  3: [110, 0],   // bot-right — right of center
-};
-
-const BOT_CARD_W = 32;
-const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
-const BOT_OVERLAP = 24;
 const HAND_SIZE = 14;
-const BOT_STRIP_STEP = BOT_CARD_W - BOT_OVERLAP;
-const BOT_STRIP_W = BOT_CARD_W + (HAND_SIZE - 1) * BOT_STRIP_STEP;
 const FLY_DURATION = 400;
 const FLY_STAGGER = 50;
 const STACK_DEPTH = HAND_SIZE;
 const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
 const PLAY_FLY_DURATION = 280;
-const CENTER_ZONE_MAX_CARDS = 4;
-const CENTER_ZONE_W =
-  PLAY_CARD_W * CENTER_ZONE_MAX_CARDS + 4 * (CENTER_ZONE_MAX_CARDS - 1);
-const CENTER_ZONE_H = Math.round(PLAY_CARD_H * 1.6);
+
+const GameTableLayoutContext = createContext<GameTableLayout | null>(null);
+
+function useTableLayout(): GameTableLayout {
+  const ctx = useContext(GameTableLayoutContext);
+  if (!ctx) throw new Error("GameTableLayoutContext missing");
+  return ctx;
+}
 
 const HUMAN_ID = 0 as PlayerId;
 
@@ -74,14 +62,6 @@ function playersByScoreDesc(
     return a - b;
   });
 }
-
-// Fly-in origin per player: card slides from their table edge to center
-const PLAY_ORIGINS: Record<number, string> = {
-  0: "translateY(60px)",   // human — bottom
-  1: "translateX(-60px)",  // bot-left
-  2: "translateY(-60px)",  // bot-top
-  3: "translateX(60px)",   // bot-right
-};
 
 type TablePhase = "pre" | "dealing" | "trading" | "playing" | "roundOver";
 type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
@@ -111,6 +91,7 @@ function CenterStack({
   stackRef: RefObject<HTMLDivElement | null>;
   progress: number;
 }) {
+  const L = useTableLayout();
   const visibleDepth = Math.max(
     0,
     Math.ceil((1 - progress) * STACK_DEPTH),
@@ -122,8 +103,8 @@ function CenterStack({
       ref={stackRef}
       className="relative shrink-0 overflow-visible transition-[opacity,transform] duration-300"
       style={{
-        width: STACK_CARD_W,
-        height: STACK_CARD_H + 18,
+        width: L.stackCardW,
+        height: L.stackCardH + L.stackExtraHeight,
         opacity: hidden ? 0 : 1,
         transform: hidden ? "scale(0.92)" : "scale(1)",
       }}
@@ -134,11 +115,11 @@ function CenterStack({
           <div
             key={layer}
             style={{
-              width: STACK_CARD_W,
-              height: STACK_CARD_H,
+              width: L.stackCardW,
+              height: L.stackCardH,
               position: "absolute",
-              top: layer * 1.1,
-              left: layer * 0.8,
+              top: layer * L.stackLayerTopUnit,
+              left: layer * L.stackLayerLeftUnit,
               opacity: 0.18 + layer * 0.05,
               transform: `scale(${1 - layer * 0.01}) rotate(${layer * -0.2}deg)`,
               filter: "drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18))",
@@ -176,14 +157,15 @@ function BotHandStrip({
   showPass: boolean;
   className?: string;
 }) {
+  const L = useTableLayout();
   const [dealPhase, setDealPhase] = useState<BotDealPhase>(() => {
     if (cards.length === 0) return "idle";
     if (cards.length === HAND_SIZE) return "measuring";
     return "done";
   });
   const labelShiftX =
-    rotationDeg === 90 ? 50 : rotationDeg === -90 ? -50 : 0;
-  const labelShiftY = rotationDeg === 180 ? 20 : 0;
+    rotationDeg === 90 ? L.labelShiftX : rotationDeg === -90 ? -L.labelShiftX : 0;
+  const labelShiftY = rotationDeg === 180 ? L.labelShiftY : 0;
   const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>([]);
   const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -331,7 +313,7 @@ function BotHandStrip({
           style={{
             transform: `rotate(${-rotationDeg}deg)`,
             transformOrigin: "center center",
-            width: BOT_STRIP_W,
+            width: L.botStripW,
             whiteSpace: "nowrap",
           }}
           className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
@@ -359,7 +341,10 @@ function BotHandStrip({
         <div
           className={`relative ${isAnimating ? "opacity-95" : "opacity-100"
             }`}
-          style={{ width: BOT_STRIP_W, minHeight: BOT_CARD_H + 8 }}
+          style={{
+            width: L.botStripW,
+            minHeight: L.botCardH + L.botStripMinHeightPad,
+          }}
         >
           {cards.map((_, i) => (
             <div
@@ -368,16 +353,16 @@ function BotHandStrip({
                 slotRefs.current[i] = el;
               }}
               style={{
-                width: BOT_CARD_W,
-                height: BOT_CARD_H,
+                width: L.botCardW,
+                height: L.botCardH,
                 position: "absolute",
-                left: i * BOT_STRIP_STEP,
+                left: i * L.botStripStep,
                 top: 0,
                 zIndex: i,
                 ...slotStyle(i),
               }}
             >
-              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+              <div style={{ width: L.botCardW, height: L.botCardH }}>
                 <CardBack />
               </div>
             </div>
@@ -386,10 +371,10 @@ function BotHandStrip({
             <div
               key={`ghost-${i}`}
               style={{
-                width: BOT_CARD_W,
-                height: BOT_CARD_H,
+                width: L.botCardW,
+                height: L.botCardH,
                 position: "absolute",
-                left: i * BOT_STRIP_STEP,
+                left: i * L.botStripStep,
                 top: 0,
                 zIndex: i,
                 opacity: ghostsVisible ? 1 : 0,
@@ -397,7 +382,7 @@ function BotHandStrip({
                 pointerEvents: "none",
               }}
             >
-              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+              <div style={{ width: L.botCardW, height: L.botCardH }}>
                 <CardBack />
               </div>
             </div>
@@ -413,14 +398,15 @@ function BotHandStrip({
 // ---------------------------------------------------------------------------
 
 function FaceUpCards({ cards, wildcardRank }: { cards: Card[]; wildcardRank?: Rank }) {
+  const L = useTableLayout();
   return (
-    <div style={{ display: "flex", gap: 4 }}>
+    <div style={{ display: "flex", gap: L.faceUpGap }}>
       {cards.map((card, i) => (
         <svg
           key={i}
           viewBox="0 0 80 112"
-          width={PLAY_CARD_W}
-          height={PLAY_CARD_H}
+          width={L.playCardW}
+          height={L.playCardH}
           style={{ display: "block", flexShrink: 0 }}
         >
           <CardFaceContent
@@ -447,6 +433,7 @@ function AnimatedPlayedCards({
   playerId: PlayerId;
   wildcardRank?: Rank;
 }) {
+  const L = useTableLayout();
   const [phase, setPhase] = useState<PlayedCardPhase>("initial");
 
   useEffect(() => {
@@ -466,7 +453,7 @@ function AnimatedPlayedCards({
     return () => clearTimeout(t);
   }, [phase]);
 
-  const origin = PLAY_ORIGINS[playerId] ?? "translateY(60px)";
+  const origin = L.playOrigins[playerId] ?? L.playOrigins[0];
 
   const style: CSSProperties = {
     transform: phase === "initial" ? origin : "translate(0,0)",
@@ -492,6 +479,7 @@ function AnimatedPlayedCards({
 type PrevPhase = "fresh" | "settled" | "fading";
 
 function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId: PlayerId }) {
+  const L = useTableLayout();
   const [displayed, setDisplayed] = useState<CenterPrevEntry | null>(null);
   const [phase, setPhase] = useState<PrevPhase>("settled");
   const displayedRef = useRef<CenterPrevEntry | null>(null);
@@ -557,7 +545,7 @@ function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId
           ? "none"
           : "opacity 360ms ease, transform 360ms ease, filter 360ms ease",
         filter: isFresh ? "none" : "grayscale(65%)",
-        marginBottom: -(PLAY_CARD_H * 0.45),
+        marginBottom: -(L.playCardH * 0.45),
       }}
     >
       <FaceUpCards cards={displayed.cards} wildcardRank={displayed.wildcardRank} />
@@ -692,17 +680,18 @@ function AllPlayZones({
   current: CenterCardEntry | null;
   prev: CenterPrevEntry | null;
 }) {
+  const L = useTableLayout();
   return (
     <>
       {([0, 1, 2, 3] as PlayerId[]).map((pid) => {
-        const [dx, dy] = PLAY_ZONE_OFFSETS[pid];
+        const [dx, dy] = L.playZoneOffsets[pid];
         return (
           <div
             key={pid}
             style={{
               position: "absolute",
-              width: CENTER_ZONE_W,
-              height: CENTER_ZONE_H,
+              width: L.centerZoneW,
+              height: L.centerZoneH,
               left: `calc(50% + ${dx}px)`,
               top: `calc(50% + ${dy}px)`,
               transform: "translate(-50%, -50%)",
@@ -722,6 +711,7 @@ function AllPlayZones({
 // ---------------------------------------------------------------------------
 
 export function GameTablePrototype() {
+  const layout = useGameLayout();
   const stackRef = useRef<HTMLDivElement>(null);
   const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -1200,8 +1190,9 @@ export function GameTablePrototype() {
       : null;
 
   return (
+    <GameTableLayoutContext.Provider value={layout}>
     <div
-      className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950"
+      className="relative min-h-dvh w-full overflow-x-hidden overflow-y-auto bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950"
       style={
         gameState?.revolutionActive
           ? { background: "linear-gradient(to bottom, #450a0a, #7f1d1d, #450a0a)" }
@@ -1222,7 +1213,7 @@ export function GameTablePrototype() {
           }}
         />
 
-        <div className="relative flex min-h-dvh flex-col px-2 pb-6 pt-3">
+        <div className="relative flex min-h-dvh flex-col px-2 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]">
           {showTable && gameState && (
             <div className="pointer-events-none absolute left-2 top-2 z-20 flex items-start gap-2">
               <div className="flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
@@ -1281,7 +1272,10 @@ export function GameTablePrototype() {
             )}
 
             {/* Center area */}
-            <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-1">
+            <div
+              className="relative flex flex-col items-center justify-center gap-2 px-1"
+              style={{ minHeight: layout.centerMinH }}
+            >
               {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
               {showTable && tablePhase !== "playing" && tablePhase !== "trading" && tablePhase !== "roundOver" && (
                 <CenterStack stackRef={stackRef} progress={stackProgress} />
@@ -1327,7 +1321,7 @@ export function GameTablePrototype() {
 
           {/* Player */}
           {showTable && hands && (
-            <div className="mt-auto w-full pb-4 pt-2">
+            <div className="mt-auto w-full pt-2">
               <CardDemo
                 key={dealId}
                 variant="embedded"
@@ -1339,6 +1333,7 @@ export function GameTablePrototype() {
                 playMode={playMode}
                 tradeMode={tradeMode}
                 playerRankLabel={rankSuffix(HUMAN_ID)}
+                layout={layout}
                 className="flex w-full flex-col items-center gap-3"
               />
             </div>
@@ -1487,5 +1482,6 @@ export function GameTablePrototype() {
         </div>
       )}
     </div>
+    </GameTableLayoutContext.Provider>
   );
 }
