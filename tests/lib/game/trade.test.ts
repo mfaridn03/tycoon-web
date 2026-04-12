@@ -6,7 +6,7 @@ import {
     PlayerRank,
     RoundPhase,
 } from "../../../lib/game/types";
-import { applyTrade, buildTradeState, startTradePhase } from "../../../lib/game/trade";
+import { applyTrade, startTradePhase } from "../../../lib/game/trade";
 
 function makeTradeState(): GameState {
     // Ranks: P0=Tycoon, P1=Rich, P2=Poor, P3=Beggar
@@ -38,6 +38,7 @@ function makeTradeState(): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: true,
         trick: { topPlay: null, topPlayerId: null, currentPattern: null, passedPlayerIds: [] },
         tradeState: null,
     };

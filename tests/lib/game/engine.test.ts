@@ -11,7 +11,6 @@ import {
 } from "../../../lib/game/types";
 import {
     createInitialGameState,
-    dealRound,
     dispatch,
     startRound,
 } from "../../../lib/game/engine";
@@ -70,7 +69,8 @@ describe("startRound", () => {
         if (!result.ok) return;
 
         for (let i = 0; i < 4; i++) {
-            expect(result.state.hands[i]).toHaveLength(13);
+            const len = result.state.hands[i].length;
+            expect(len === 13 || len === 14).toBe(true);
         }
     });
 });
@@ -104,12 +104,13 @@ describe("applyMove (play cards)", () => {
         const s = startedRound1();
         const activeId = s.activePlayerId;
         const card = new Card("3", "D");
+        const initialHandSize = s.hands[activeId].length;
 
         const result = dispatch(s, { type: "play", playerId: activeId, cards: [card] });
         expect(result.ok).toBe(true);
         if (!result.ok) return;
 
-        expect(result.state.hands[activeId]).toHaveLength(12);
+        expect(result.state.hands[activeId]).toHaveLength(initialHandSize - 1);
         expect(result.state.trick.topPlay).not.toBeNull();
         expect(result.state.trick.currentPattern).toBe(PlayPattern.One);
     });
@@ -449,7 +450,7 @@ describe("round ending", () => {
         if (!r1.ok) throw new Error(r1.reason);
 
         // Simulate state where 3 players finished and last one has 1 card
-        let s: GameState = {
+        const s: GameState = {
             ...r1.state,
             activePlayerId: 3,
             hands: [[], [], [], [new Card("2", "S")]],

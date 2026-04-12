@@ -4,6 +4,7 @@ import {
     Card,
     type GameState,
     Play,
+    PlayEffect,
     PlayPattern,
     RoundPhase,
     type TrickState,
@@ -31,6 +32,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
         finishOrder: [],
         finishedPlayers: [],
         demotedTycoonId: null,
+        roundOneOpeningLeadSatisfied: false,
         trick: emptyTrick(),
         tradeState: null,
         ...overrides,
@@ -163,6 +165,36 @@ describe("validatePlay", () => {
         const r = validatePlay(s, 0, [new Card("5", "H"), new Card("5", "H")]);
         expect(r.valid).toBe(false);
     });
+
+    // Joker tests
+    it("accepts solo joker on empty table", () => {
+        const s = makeState({
+            roundOneOpeningLeadSatisfied: true,
+            hands: [
+                [new Card("JK", "RJ"), new Card("5", "H")],
+                [], [], [],
+            ],
+        });
+        const r = validatePlay(s, 0, [new Card("JK", "RJ")]);
+        expect(r.valid).toBe(true);
+    });
+
+    it("3S beats solo joker", () => {
+        const jokerPlay = new Play([new Card("JK", "RJ")]);
+        const threeSpadePlay = new Play([new Card("3", "S")]);
+        expect(threeSpadePlay.higherThan(jokerPlay)).toBe(true);
+    });
+
+    it("solo joker has Joker effect", () => {
+        const play = new Play([new Card("JK", "RJ")]);
+        expect(play.effects.has(PlayEffect.Joker)).toBe(true);
+    });
+
+    it("joker wildcard as 8 has EightStop effect", () => {
+        const play = new Play([new Card("JK", "RJ")], "8");
+        expect(play.effects.has(PlayEffect.EightStop)).toBe(true);
+        expect(play.effects.has(PlayEffect.Joker)).toBe(false);
+    });
 });
 
 describe("getLegalPlays", () => {
@@ -174,8 +206,8 @@ describe("getLegalPlays", () => {
     it("enumerates all singles/pairs on empty table", () => {
         const s = makeState();
         const plays = getLegalPlays(s, 0);
-        const singles = plays.filter((p) => p.length === 1);
-        const pairs = plays.filter((p) => p.length === 2);
+        const singles = plays.filter((p) => p.cards.length === 1);
+        const pairs = plays.filter((p) => p.cards.length === 2);
         expect(singles).toHaveLength(1);
         expect(pairs).toHaveLength(0);
     });
@@ -192,7 +224,38 @@ describe("getLegalPlays", () => {
         const plays = getLegalPlays(s, 0);
 
         expect(plays).toHaveLength(2);
-        expect(plays.every((play) => play.some((card) => card.rank === "3" && card.suit === "D"))).toBe(true);
+        expect(plays.every((lp) => lp.cards.some((card) => card.rank === "3" && card.suit === "D"))).toBe(true);
+    });
+
+    it("does not require 3D on empty trick after round-1 opening lead (e.g. new trick same round)", () => {
+        const s = makeState({
+            roundOneOpeningLeadSatisfied: true,
+            trick: emptyTrick(),
+            hands: [
+                [new Card("3", "D"), new Card("9", "H"), new Card("K", "C")],
+                [new Card("7", "D")],
+                [new Card("A", "D")],
+                [new Card("2", "C")],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+        expect(plays.some((lp) => lp.cards.length === 1 && lp.cards[0]!.rank === "9")).toBe(true);
+    });
+
+    it("does not require 3D for round 2+ opening lead when holder still has 3D", () => {
+        const s = makeState({
+            roundNumber: 2,
+            roundOneOpeningLeadSatisfied: true,
+            trick: emptyTrick(),
+            hands: [
+                [new Card("3", "D"), new Card("9", "H"), new Card("K", "C")],
+                [new Card("7", "D")],
+                [new Card("A", "D")],
+                [new Card("2", "C")],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+        expect(plays.some((lp) => lp.cards.length === 1 && lp.cards[0]!.rank === "9")).toBe(true);
     });
 
     it("only returns plays matching current trick pattern", () => {
@@ -205,8 +268,46 @@ describe("getLegalPlays", () => {
             },
         });
         const plays = getLegalPlays(s, 0);
-        expect(plays.every((p) => p.length === 1)).toBe(true);
+        expect(plays.every((lp) => lp.cards.length === 1)).toBe(true);
         // 5H, 5S, KC beat 4 (3 doesn't)
         expect(plays).toHaveLength(3);
+    });
+
+    it("includes 3S counter when top play is solo joker", () => {
+        const s = makeState({
+            roundOneOpeningLeadSatisfied: true,
+            activePlayerId: 1,
+            hands: [
+                [],
+                [new Card("3", "S"), new Card("5", "H")],
+                [], [],
+            ],
+            trick: {
+                topPlay: new Play([new Card("JK", "RJ")]),
+                topPlayerId: 0,
+                currentPattern: PlayPattern.One,
+                passedPlayerIds: [],
+            },
+        });
+        const plays = getLegalPlays(s, 1);
+        const has3S = plays.some(
+            (lp) => lp.cards.length === 1 && lp.cards[0].rank === "3" && lp.cards[0].suit === "S",
+        );
+        expect(has3S).toBe(true);
+    });
+
+    it("generates joker wildcard plays", () => {
+        const s = makeState({
+            roundOneOpeningLeadSatisfied: true,
+            hands: [
+                [new Card("5", "H"), new Card("JK", "RJ")],
+                [], [], [],
+            ],
+        });
+        const plays = getLegalPlays(s, 0);
+        const wildcardPairs = plays.filter(
+            (lp) => lp.cards.length === 2 && lp.wildcardRank === "5",
+        );
+        expect(wildcardPairs).toHaveLength(1);
     });
 });

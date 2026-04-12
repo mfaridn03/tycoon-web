@@ -10,15 +10,15 @@ import { Card, PlayerRank } from "../../../lib/game/types";
 
 describe("game logging helpers", () => {
     it("formats hand blocks with player letters and sizes", () => {
-        const hands = [
+        const hands: [Card[], Card[], Card[], Card[]] = [
             [new Card("3", "D"), new Card("3", "C")],
             [new Card("8", "H")],
             [],
             [new Card("A", "S")],
-        ] as const;
+        ];
 
         expect(formatHandsBlock(hands, false)).toEqual([
-            "A: 3D 3C (2)",
+            "X: 3D 3C (2)",
             "B: 8H (1)",
             "C: (empty) (0)",
             "D: AS (1)",
@@ -34,7 +34,7 @@ describe("game logging helpers", () => {
                 3: PlayerRank.Beggar,
             }),
         ).toEqual([
-            "tycoon: A",
+            "tycoon: X",
             "rich: C",
             "poor: B",
             "beggar: D",
@@ -53,8 +53,8 @@ describe("game logging helpers", () => {
                 },
             ]),
         ).toEqual([
-            "A -> D: 3S 4H",
-            "D -> A: 2C AC",
+            "X -> D: 3S 4H",
+            "D -> X: 2C AC",
         ]);
     });
 

@@ -1,0 +1,1493 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
+import { CardDemo } from "@/components/CardDemo";
+import { CardBack } from "@/components/cards/CardBack";
+import { CardFaceContent } from "@/components/cards/PlayingCard";
+import { chooseBotPlay } from "@/lib/game/bots";
+import {
+  canPass,
+  formatScores,
+  formatTradeRequirement,
+  playerLabel,
+} from "@/lib/game/cli-helpers";
+import { getMatchWinner } from "@/lib/game/scoring";
+import {
+  buildBotTradeAction,
+  getNextPendingTrade,
+  isHumanTradeTurn,
+} from "@/lib/game";
+import { createInitialGameState, dispatch } from "@/lib/game/engine";
+import { shuffleDeck } from "@/lib/game/shuffle-deck";
+import { getLegalPlays } from "@/lib/game/validation";
+import type { Card, GameEvent, GameState, PlayerId, Rank, TrickState } from "@/lib/game/types";
+import { RoundPhase } from "@/lib/game/types";
+
+const STACK_CARD_W = 96;
+const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));
+
+const PLAY_CARD_W = 72;
+const PLAY_CARD_H = Math.round(PLAY_CARD_W * (112 / 80));
+
+// dx/dy offsets (px) from center of the play area container
+const PLAY_ZONE_OFFSETS: Record<number, [number, number]> = {
+  0: [0, 72],    // human — below center
+  1: [-110, 0],  // bot-left — left of center
+  2: [0, -72],   // bot-top — above center
+  3: [110, 0],   // bot-right — right of center
+};
+
+const BOT_CARD_W = 32;
+const BOT_CARD_H = Math.round(BOT_CARD_W * (112 / 80));
+const BOT_OVERLAP = 24;
+const HAND_SIZE = 14;
+const BOT_STRIP_STEP = BOT_CARD_W - BOT_OVERLAP;
+const BOT_STRIP_W = BOT_CARD_W + (HAND_SIZE - 1) * BOT_STRIP_STEP;
+const FLY_DURATION = 400;
+const FLY_STAGGER = 50;
+const STACK_DEPTH = HAND_SIZE;
+const DEAL_DURATION = (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50;
+const PLAY_FLY_DURATION = 280;
+const CENTER_ZONE_MAX_CARDS = 4;
+const CENTER_ZONE_W =
+  PLAY_CARD_W * CENTER_ZONE_MAX_CARDS + 4 * (CENTER_ZONE_MAX_CARDS - 1);
+const CENTER_ZONE_H = Math.round(PLAY_CARD_H * 1.6);
+
+const HUMAN_ID = 0 as PlayerId;
+
+const TABLE_PLAYER_NAMES: Record<PlayerId, string> = {
+  0: "You",
+  1: "Bot B",
+  2: "Bot C",
+  3: "Bot D",
+};
+
+function playersByScoreDesc(
+  scores: [number, number, number, number],
+): PlayerId[] {
+  return ([0, 1, 2, 3] as PlayerId[]).sort((a, b) => {
+    const d = scores[b] - scores[a];
+    if (d !== 0) return d;
+    return a - b;
+  });
+}
+
+// Fly-in origin per player: card slides from their table edge to center
+const PLAY_ORIGINS: Record<number, string> = {
+  0: "translateY(60px)",   // human — bottom
+  1: "translateX(-60px)",  // bot-left
+  2: "translateY(-60px)",  // bot-top
+  3: "translateX(60px)",   // bot-right
+};
+
+type TablePhase = "pre" | "dealing" | "trading" | "playing" | "roundOver";
+type BotDealPhase = "idle" | "measuring" | "atStack" | "flying" | "done";
+type PlayedCardPhase = "initial" | "landing" | "done";
+
+type CenterCardEntry = {
+  cards: Card[];
+  playerId: PlayerId;
+  animKey: number;
+  wildcardRank?: Rank;
+};
+
+type CenterPrevEntry = {
+  cards: Card[];
+  playerId: PlayerId;
+  wildcardRank?: Rank;
+};
+
+// ---------------------------------------------------------------------------
+// CenterStack
+// ---------------------------------------------------------------------------
+
+function CenterStack({
+  stackRef,
+  progress,
+}: {
+  stackRef: RefObject<HTMLDivElement | null>;
+  progress: number;
+}) {
+  const visibleDepth = Math.max(
+    0,
+    Math.ceil((1 - progress) * STACK_DEPTH),
+  );
+  const hidden = visibleDepth === 0;
+
+  return (
+    <div
+      ref={stackRef}
+      className="relative shrink-0 overflow-visible transition-[opacity,transform] duration-300"
+      style={{
+        width: STACK_CARD_W,
+        height: STACK_CARD_H + 18,
+        opacity: hidden ? 0 : 1,
+        transform: hidden ? "scale(0.92)" : "scale(1)",
+      }}
+    >
+      {Array.from({ length: visibleDepth }, (_, index) => {
+        const layer = visibleDepth - index - 1;
+        return (
+          <div
+            key={layer}
+            style={{
+              width: STACK_CARD_W,
+              height: STACK_CARD_H,
+              position: "absolute",
+              top: layer * 1.1,
+              left: layer * 0.8,
+              opacity: 0.18 + layer * 0.05,
+              transform: `scale(${1 - layer * 0.01}) rotate(${layer * -0.2}deg)`,
+              filter: "drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18))",
+              zIndex: layer,
+              pointerEvents: "none",
+            }}
+          >
+            <CardBack />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BotHandStrip
+// ---------------------------------------------------------------------------
+
+function BotHandStrip({
+  stackRef,
+  cards,
+  botName,
+  rankSuffix,
+  rotationDeg,
+  showPass,
+  className,
+}: {
+  stackRef: RefObject<HTMLDivElement | null>;
+  cards: Card[];
+  botName: string;
+  /** Lowercase rank from previous round, e.g. "tycoon" — shown as "Bot B (tycoon)". */
+  rankSuffix?: string | null;
+  rotationDeg: number;
+  showPass: boolean;
+  className?: string;
+}) {
+  const [dealPhase, setDealPhase] = useState<BotDealPhase>(() => {
+    if (cards.length === 0) return "idle";
+    if (cards.length === HAND_SIZE) return "measuring";
+    return "done";
+  });
+  const labelShiftX =
+    rotationDeg === 90 ? 50 : rotationDeg === -90 ? -50 : 0;
+  const labelShiftY = rotationDeg === 180 ? 20 : 0;
+  const [flyOffsets, setFlyOffsets] = useState<{ x: number; y: number }[]>([]);
+  const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Pass flash
+  const [isFlashing, setIsFlashing] = useState(false);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!showPass) return;
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    queueMicrotask(() => setIsFlashing(true));
+    flashTimerRef.current = setTimeout(() => setIsFlashing(false), 1000);
+  }, [showPass]);
+
+  // Ghost cards for smooth deck shrink when cards are played
+  const [ghosts, setGhosts] = useState<number[]>([]);
+  const [ghostsVisible, setGhostsVisible] = useState(false);
+  const prevCardsLenRef = useRef(cards.length);
+  const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useLayoutEffect(() => {
+    if (dealPhase !== "done") {
+      prevCardsLenRef.current = cards.length;
+      return;
+    }
+    const prevLen = prevCardsLenRef.current;
+    prevCardsLenRef.current = cards.length;
+    if (cards.length >= prevLen) return;
+
+    const startIdx = cards.length;
+    const indices = Array.from({ length: prevLen - cards.length }, (_, k) => startIdx + k);
+    setGhosts(indices);
+    setGhostsVisible(true);
+
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setGhostsVisible(false));
+    });
+    if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+    ghostTimerRef.current = setTimeout(() => setGhosts([]), 420);
+
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, [cards.length, dealPhase]);
+
+  useEffect(
+    () => () => {
+      timersRef.current.forEach(clearTimeout);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (dealPhase !== "measuring") return;
+    if (!stackRef.current || cards.length === 0) return;
+
+    const sr = stackRef.current.getBoundingClientRect();
+    const scx = sr.left + sr.width / 2;
+    const scy = sr.top + sr.height / 2;
+
+    // Viewport-space offsets must be rotated into local (parent-rotated) space
+    // so that CSS translate() lands the card at the stack position.
+    const rad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    const offsets = slotRefs.current.map((el) => {
+      if (!el) return { x: 0, y: 0 };
+      const r = el.getBoundingClientRect();
+      const vx = scx - (r.left + r.width / 2);
+      const vy = scy - (r.top + r.height / 2);
+      return {
+        x: vx * cos + vy * sin,
+        y: -vx * sin + vy * cos,
+      };
+    });
+    setFlyOffsets(offsets);
+    setDealPhase("atStack");
+  }, [dealPhase, cards, stackRef, rotationDeg]);
+
+  useEffect(() => {
+    if (dealPhase !== "atStack") return;
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setDealPhase("flying"));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, [dealPhase]);
+
+  useEffect(() => {
+    if (dealPhase !== "flying") return;
+    const t = setTimeout(
+      () => setDealPhase("done"),
+      (HAND_SIZE - 1) * FLY_STAGGER + FLY_DURATION + 50,
+    );
+    timersRef.current.push(t);
+    return () => clearTimeout(t);
+  }, [dealPhase]);
+
+  function slotStyle(index: number): CSSProperties {
+    const offset = flyOffsets[index] ?? { x: 0, y: 0 };
+    switch (dealPhase) {
+      case "idle":
+        return { opacity: 0 };
+      case "measuring":
+        return { opacity: 0 };
+      case "atStack":
+        return {
+          transform: `translate(${offset.x}px, ${offset.y}px)`,
+          opacity: 1,
+        };
+      case "flying":
+        return {
+          transform: "translate(0, 0)",
+          transition: `transform ${FLY_DURATION}ms ease-out ${index * FLY_STAGGER}ms`,
+          opacity: 1,
+        };
+      case "done":
+        return { opacity: 1 };
+      default:
+        return {};
+    }
+  }
+
+  const isAnimating = !["idle", "done"].includes(dealPhase);
+
+  return (
+    <div
+      className={className}
+      style={{
+        transform: `rotate(${rotationDeg}deg)`,
+        transformOrigin: "center center",
+      }}
+    >
+      <div className="flex flex-col items-center pointer-events-none">
+        <div
+          style={{
+            transform: `rotate(${-rotationDeg}deg)`,
+            transformOrigin: "center center",
+            width: BOT_STRIP_W,
+            whiteSpace: "nowrap",
+          }}
+          className="mb-0.5 flex flex-col items-center gap-0.5 select-none"
+        >
+          <div
+            style={{ transform: `translate(${labelShiftX}px, ${labelShiftY}px)` }}
+            className="flex flex-col items-center gap-1"
+          >
+            <div
+              className="text-xs font-semibold leading-none"
+              style={{ color: isFlashing ? "#f87171" : "#d1fae5", transition: "color 200ms ease" }}
+            >
+              {botName}
+              {rankSuffix ? ` (${rankSuffix})` : ""}
+            </div>
+            <div
+              className="text-[11px] leading-none"
+              style={{ color: isFlashing ? "#fca5a5" : "rgba(167,243,208,0.8)", transition: "color 200ms ease" }}
+            >
+              {cards.length} cards
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`relative ${isAnimating ? "opacity-95" : "opacity-100"
+            }`}
+          style={{ width: BOT_STRIP_W, minHeight: BOT_CARD_H + 8 }}
+        >
+          {cards.map((_, i) => (
+            <div
+              key={i}
+              ref={(el) => {
+                slotRefs.current[i] = el;
+              }}
+              style={{
+                width: BOT_CARD_W,
+                height: BOT_CARD_H,
+                position: "absolute",
+                left: i * BOT_STRIP_STEP,
+                top: 0,
+                zIndex: i,
+                ...slotStyle(i),
+              }}
+            >
+              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+                <CardBack />
+              </div>
+            </div>
+          ))}
+          {ghosts.map((i) => (
+            <div
+              key={`ghost-${i}`}
+              style={{
+                width: BOT_CARD_W,
+                height: BOT_CARD_H,
+                position: "absolute",
+                left: i * BOT_STRIP_STEP,
+                top: 0,
+                zIndex: i,
+                opacity: ghostsVisible ? 1 : 0,
+                transition: "opacity 380ms ease-out",
+                pointerEvents: "none",
+              }}
+            >
+              <div style={{ width: BOT_CARD_W, height: BOT_CARD_H }}>
+                <CardBack />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Face-up cards (SVG row, no interaction)
+// ---------------------------------------------------------------------------
+
+function FaceUpCards({ cards, wildcardRank }: { cards: Card[]; wildcardRank?: Rank }) {
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      {cards.map((card, i) => (
+        <svg
+          key={i}
+          viewBox="0 0 80 112"
+          width={PLAY_CARD_W}
+          height={PLAY_CARD_H}
+          style={{ display: "block", flexShrink: 0 }}
+        >
+          <CardFaceContent
+            rank={card.rank}
+            suit={card.suit}
+            mimickedRank={card.isJoker() ? wildcardRank : undefined}
+          />
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AnimatedPlayedCards — whole card row slides in from player's direction
+// ---------------------------------------------------------------------------
+
+function AnimatedPlayedCards({
+  cards,
+  playerId,
+  wildcardRank,
+}: {
+  cards: Card[];
+  playerId: PlayerId;
+  wildcardRank?: Rank;
+}) {
+  const [phase, setPhase] = useState<PlayedCardPhase>("initial");
+
+  useEffect(() => {
+    let id2: number;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setPhase("landing"));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      if (id2) cancelAnimationFrame(id2);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "landing") return;
+    const t = setTimeout(() => setPhase("done"), PLAY_FLY_DURATION + 50);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  const origin = PLAY_ORIGINS[playerId] ?? "translateY(60px)";
+
+  const style: CSSProperties = {
+    transform: phase === "initial" ? origin : "translate(0,0)",
+    opacity: phase === "initial" ? 0 : 1,
+    transition:
+      phase === "landing"
+        ? `transform ${PLAY_FLY_DURATION}ms ease-out, opacity ${Math.round(PLAY_FLY_DURATION * 0.6)}ms ease-out`
+        : undefined,
+    filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.45))",
+  };
+
+  return (
+    <div style={style}>
+      <FaceUpCards cards={cards} wildcardRank={wildcardRank} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FadingPrev — greyed previous play: fades IN from full card, fades OUT when cleared
+// ---------------------------------------------------------------------------
+
+type PrevPhase = "fresh" | "settled" | "fading";
+
+function FadingPrev({ prev, playerId }: { prev: CenterPrevEntry | null; playerId: PlayerId }) {
+  const [displayed, setDisplayed] = useState<CenterPrevEntry | null>(null);
+  const [phase, setPhase] = useState<PrevPhase>("settled");
+  const displayedRef = useRef<CenterPrevEntry | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafIds = useRef<number[]>([]);
+
+  useEffect(() => {
+    const cancel = () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      rafIds.current.forEach(cancelAnimationFrame);
+      rafIds.current = [];
+    };
+
+    const next = prev?.playerId === playerId ? prev : null;
+
+    if (next) {
+      cancel();
+      displayedRef.current = next;
+      // Mount in "fresh" (full-card) appearance, then transition to grey
+      queueMicrotask(() => {
+        setDisplayed(next);
+        setPhase("fresh");
+      });
+      const id1 = requestAnimationFrame(() => {
+        const id2 = requestAnimationFrame(() => setPhase("settled"));
+        rafIds.current.push(id2);
+      });
+      rafIds.current.push(id1);
+    } else if (displayedRef.current) {
+      cancel();
+      // Ensure "settled" is painted before triggering fade-out
+      const id1 = requestAnimationFrame(() => {
+        const id2 = requestAnimationFrame(() => {
+          setPhase("fading");
+          timerRef.current = setTimeout(() => {
+            setDisplayed(null);
+            displayedRef.current = null;
+          }, 400);
+        });
+        rafIds.current.push(id2);
+      });
+      rafIds.current.push(id1);
+    }
+
+    return cancel;
+
+  }, [prev, playerId]);
+
+  if (!displayed) return null;
+
+  const isFresh = phase === "fresh";
+  const isFading = phase === "fading";
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 1,
+        transform: `scale(${isFresh ? 1 : 0.88})`,
+        transformOrigin: "bottom center",
+        opacity: isFresh ? 1 : isFading ? 0 : 0.38,
+        transition: isFresh
+          ? "none"
+          : "opacity 360ms ease, transform 360ms ease, filter 360ms ease",
+        filter: isFresh ? "none" : "grayscale(65%)",
+        marginBottom: -(PLAY_CARD_H * 0.45),
+      }}
+    >
+      <FaceUpCards cards={displayed.cards} wildcardRank={displayed.wildcardRank} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FadingCurrent — current play card that fades out when trick ends
+// ---------------------------------------------------------------------------
+
+function FadingCurrent({
+  current,
+  playerId,
+  skipFade,
+}: {
+  current: CenterCardEntry | null;
+  playerId: PlayerId;
+  skipFade: boolean;
+}) {
+  const [displayed, setDisplayed] = useState<CenterCardEntry | null>(null);
+  const [fading, setFading] = useState(false);
+  const displayedRef = useRef<CenterCardEntry | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafIds = useRef<number[]>([]);
+
+  useEffect(() => {
+    const cancel = () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      rafIds.current.forEach(cancelAnimationFrame);
+      rafIds.current = [];
+    };
+
+    const next = current?.playerId === playerId ? current : null;
+
+    if (next) {
+      cancel();
+      displayedRef.current = next;
+      queueMicrotask(() => {
+        setDisplayed(next);
+        setFading(false);
+      });
+    } else if (displayedRef.current) {
+      cancel();
+      if (skipFade) {
+        displayedRef.current = null;
+        queueMicrotask(() => setDisplayed(null));
+      } else {
+        const id1 = requestAnimationFrame(() => {
+          const id2 = requestAnimationFrame(() => {
+            setFading(true);
+            timerRef.current = setTimeout(() => {
+              setDisplayed(null);
+              displayedRef.current = null;
+              setFading(false);
+            }, 400);
+          });
+          rafIds.current.push(id2);
+        });
+        rafIds.current.push(id1);
+      }
+    }
+
+    return cancel;
+
+  }, [current, playerId, skipFade]);
+
+  if (!displayed) return null;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        opacity: fading ? 0 : 1,
+        transform: fading ? "scale(0.9)" : undefined,
+        transition: fading ? "opacity 360ms ease, transform 360ms ease" : undefined,
+      }}
+    >
+      <AnimatedPlayedCards
+        key={displayed.animKey}
+        cards={displayed.cards}
+        playerId={playerId}
+        wildcardRank={displayed.wildcardRank}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PlayerPlayZone — prev (greyed, peeking above) + current (animated) per slot
+// ---------------------------------------------------------------------------
+
+function PlayerPlayZone({
+  playerId,
+  current,
+  prev,
+}: {
+  playerId: PlayerId;
+  current: CenterCardEntry | null;
+  prev: CenterPrevEntry | null;
+}) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <FadingPrev prev={prev} playerId={playerId} />
+      <FadingCurrent
+        current={current}
+        playerId={playerId}
+        skipFade={prev?.playerId === playerId}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AllPlayZones — four dedicated card-play areas, one per player
+// ---------------------------------------------------------------------------
+
+function AllPlayZones({
+  current,
+  prev,
+}: {
+  current: CenterCardEntry | null;
+  prev: CenterPrevEntry | null;
+}) {
+  return (
+    <>
+      {([0, 1, 2, 3] as PlayerId[]).map((pid) => {
+        const [dx, dy] = PLAY_ZONE_OFFSETS[pid];
+        return (
+          <div
+            key={pid}
+            style={{
+              position: "absolute",
+              width: CENTER_ZONE_W,
+              height: CENTER_ZONE_H,
+              left: `calc(50% + ${dx}px)`,
+              top: `calc(50% + ${dy}px)`,
+              transform: "translate(-50%, -50%)",
+              zIndex: current?.playerId === pid ? 10 : 1,
+            }}
+          >
+            <PlayerPlayZone playerId={pid} current={current} prev={prev} />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GameTablePrototype
+// ---------------------------------------------------------------------------
+
+export function GameTablePrototype() {
+  const stackRef = useRef<HTMLDivElement>(null);
+  const [tablePhase, setTablePhase] = useState<TablePhase>("pre");
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [dealId, setDealId] = useState(0);
+  /** 0–1 while dealing; ignored when not dealing (see `stackProgress`). */
+  const [dealingStackProgress, setDealingStackProgress] = useState(0);
+  const [playError, setPlayError] = useState<string | null>(null);
+  const gameStateRef = useRef<GameState | null>(null);
+  gameStateRef.current = gameState;
+
+  // Center play display state
+  const [centerCurrent, setCenterCurrent] = useState<CenterCardEntry | null>(null);
+  const [centerPrev, setCenterPrev] = useState<CenterPrevEntry | null>(null);
+  const [visiblePassers, setVisiblePassers] = useState<Set<PlayerId>>(new Set());
+  const prevTrickRef = useRef<TrickState | null>(null);
+  const prevGameStateRef = useRef<GameState | null>(null);
+  const centerCurrentRef = useRef<CenterCardEntry | null>(null);
+  const animKeyRef = useRef(0);
+  const passTimersRef = useRef<Map<PlayerId, ReturnType<typeof setTimeout>>>(new Map());
+  const eightStopClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [tradeReceivedCards, setTradeReceivedCards] = useState<Card[] | null>(null);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+
+  // Cleanup pass timers on unmount
+  useEffect(
+    () => () => {
+      passTimersRef.current.forEach(clearTimeout);
+      if (eightStopClearTimerRef.current) clearTimeout(eightStopClearTimerRef.current);
+    },
+    [],
+  );
+
+  const stackProgress =
+    tablePhase === "pre"
+      ? 0
+      : tablePhase === "dealing"
+        ? dealingStackProgress
+        : 1;
+
+  const clearCenterState = useCallback(() => {
+    setCenterCurrent(null);
+    setCenterPrev(null);
+    setVisiblePassers(new Set());
+    centerCurrentRef.current = null;
+    prevTrickRef.current = null;
+    prevGameStateRef.current = null;
+    passTimersRef.current.forEach(clearTimeout);
+    passTimersRef.current.clear();
+    if (eightStopClearTimerRef.current) {
+      clearTimeout(eightStopClearTimerRef.current);
+      eightStopClearTimerRef.current = null;
+    }
+    setTradeReceivedCards(null);
+  }, []);
+
+  const startGame = useCallback(() => {
+    setPlayError(null);
+    clearCenterState();
+    const s0 = createInitialGameState();
+    const r = dispatch(s0, { type: "startRound" }, shuffleDeck);
+    if (!r.ok) {
+      setPlayError(r.reason);
+      return;
+    }
+    setGameState(r.state);
+    setDealId((n) => n + 1);
+    setDealingStackProgress(0);
+    setTablePhase("dealing");
+  }, [clearCenterState]);
+
+  const resetGame = useCallback(() => {
+    setGameState(null);
+    setPlayError(null);
+    setTablePhase("pre");
+    clearCenterState();
+  }, [clearCenterState]);
+
+  const handleNextRound = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "startRound" }, shuffleDeck);
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      queueMicrotask(() => {
+        clearCenterState();
+        setDealId((n) => n + 1);
+        setDealingStackProgress(0);
+        setTablePhase("dealing");
+      });
+      return r.state;
+    });
+  }, [clearCenterState]);
+
+  const handleEndMatch = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "endMatch" });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      queueMicrotask(() => setTablePhase("roundOver"));
+      return r.state;
+    });
+  }, []);
+
+  const onPlayerDealComplete = useCallback(() => {
+    const gs = gameStateRef.current;
+    if (gs && gs.phase === RoundPhase.Trade) {
+      setTablePhase("trading");
+    } else {
+      setTablePhase("playing");
+    }
+  }, []);
+
+  const handleHumanPlay = useCallback((cards: Card[], wildcardRank?: Rank) => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "play", playerId: HUMAN_ID, cards, wildcardRank });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+        queueMicrotask(() => setTablePhase("roundOver"));
+      }
+      return r.state;
+    });
+  }, []);
+
+  const handlePass = useCallback(() => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev) return prev;
+      const r = dispatch(prev, { type: "pass", playerId: HUMAN_ID });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+        queueMicrotask(() => setTablePhase("roundOver"));
+      }
+      return r.state;
+    });
+  }, []);
+
+  // Bot turns — dynamic delay for pacing
+  useEffect(() => {
+    if (tablePhase !== "playing" || !gameState) return;
+    if (gameState.phase !== RoundPhase.Play) return;
+    if (gameState.activePlayerId === HUMAN_ID) return;
+    if (tradeReceivedCards !== null) return;
+
+    const isHumanOut = gameState.finishedPlayers.includes(HUMAN_ID) || gameState.demotedTycoonId === HUMAN_ID;
+    const delay = isHumanOut ? 250 : 1000;
+
+    const t = setTimeout(() => {
+      setGameState((prev) => {
+        if (!prev || prev.phase !== RoundPhase.Play) return prev;
+        if (prev.activePlayerId === HUMAN_ID) return prev;
+        const pid = prev.activePlayerId;
+        const choice = chooseBotPlay(prev, pid);
+        const action =
+          choice.type === "pass"
+            ? { type: "pass" as const, playerId: pid }
+            : { type: "play" as const, playerId: pid, cards: choice.cards, wildcardRank: choice.wildcardRank };
+        const r = dispatch(prev, action);
+        if (!r.ok) return prev;
+        if (r.events.some((e: GameEvent) => e.type === "roundFinished")) {
+          queueMicrotask(() => setTablePhase("roundOver"));
+        }
+        return r.state;
+      });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [gameState, tablePhase, tradeReceivedCards]);
+
+  // Human completeTrade handler (playerId = current requirement receiver)
+  const handleCompleteTrade = useCallback((cards: Card[]) => {
+    setPlayError(null);
+    setGameState((prev) => {
+      if (!prev || prev.phase !== RoundPhase.Trade) return prev;
+      const pending = getNextPendingTrade(prev);
+      if (!pending) return prev;
+      const receiverId = pending.requirement.receiverId;
+      const r = dispatch(prev, {
+        type: "completeTrade",
+        playerId: receiverId,
+        cards,
+      });
+      if (!r.ok) {
+        queueMicrotask(() => setPlayError(r.reason));
+        return prev;
+      }
+      if (r.state.phase === RoundPhase.Play) {
+        queueMicrotask(() => setTablePhase("playing"));
+      }
+      return r.state;
+    });
+  }, []);
+
+  // Bot trade effect — auto-complete non-human trades with pacing
+  useEffect(() => {
+    if (tablePhase !== "trading" || !gameState) return;
+    if (gameState.phase !== RoundPhase.Trade || !gameState.tradeState) return;
+    const pending = getNextPendingTrade(gameState);
+    if (!pending) return;
+    if (pending.requirement.receiverId === HUMAN_ID) return;
+
+    const t = setTimeout(() => {
+      setGameState((prev) => {
+        if (!prev || prev.phase !== RoundPhase.Trade || !prev.tradeState) return prev;
+        const p = getNextPendingTrade(prev);
+        if (!p || p.requirement.receiverId === HUMAN_ID) return prev;
+        const action = buildBotTradeAction(prev, p);
+        const r = dispatch(prev, action);
+        if (!r.ok) return prev;
+        if (r.state.phase === RoundPhase.Play) {
+          queueMicrotask(() => setTablePhase("playing"));
+        }
+        return r.state;
+      });
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [gameState, tablePhase]);
+
+  // Track trick state changes → update center card display
+  useEffect(() => {
+    if (!gameState) {
+      prevTrickRef.current = null;
+      prevGameStateRef.current = null;
+      return;
+    }
+
+    const prevGS = prevGameStateRef.current;
+    const prev = prevTrickRef.current;
+    const curr = gameState.trick;
+    prevTrickRef.current = curr;
+    prevGameStateRef.current = gameState;
+
+    if (!prev || !prevGS) return; // first render — establish baseline only
+
+    // Detect Trade -> Play transition to show received cards
+    if (prevGS.phase === RoundPhase.Trade && gameState.phase === RoundPhase.Play && prevGS.tradeState) {
+      const myReq = prevGS.tradeState.requirements.find(r => r.receiverId === HUMAN_ID);
+      if (myReq && myReq.giverCards && myReq.giverCards.length > 0) {
+        setTradeReceivedCards(myReq.giverCards);
+      }
+    }
+
+    const prevActivePlayer = prevGS.activePlayerId;
+
+    // Helper: recover cards played by a player between states
+    const getPlayedCards = (pid: PlayerId): Card[] => {
+      if (!prevGS) return [];
+      const oldHand = prevGS.hands[pid];
+      const newHand = gameState.hands[pid];
+      return oldHand.filter((c) => !newHand.some((nc) => nc.equals(c)));
+    };
+
+    // Helper: did a player's hand shrink (i.e. they played cards)?
+    const handShrank = (pid: PlayerId): boolean => {
+      if (!prevGS) return false;
+      return gameState.hands[pid].length < prevGS.hands[pid].length;
+    };
+
+    // Normal new play landed on top
+    if (curr.topPlay !== null && curr.topPlay !== prev.topPlay) {
+      // Cancel any pending 8-stop clear from previous trick
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
+      const newEntry: CenterCardEntry = {
+        cards: curr.topPlay.cards,
+        playerId: curr.topPlayerId!,
+        animKey: ++animKeyRef.current,
+        wildcardRank: curr.topPlay.wildcardRank ?? undefined,
+      };
+      const prevEntry: CenterPrevEntry | null = centerCurrentRef.current
+        ? {
+          cards: centerCurrentRef.current.cards,
+          playerId: centerCurrentRef.current.playerId,
+          wildcardRank: centerCurrentRef.current.wildcardRank,
+        }
+        : null;
+      centerCurrentRef.current = newEntry;
+      queueMicrotask(() => {
+        setCenterPrev(prevEntry);
+        setCenterCurrent(newEntry);
+      });
+    }
+
+    // Trick ended (topPlay went non-null → null)
+    if (curr.topPlay === null && prev.topPlay !== null) {
+      passTimersRef.current.forEach(clearTimeout);
+      passTimersRef.current.clear();
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
+
+      // Distinguish 8-stop vs pass-win: prevActivePlayer played cards in 8-stop
+      if (handShrank(prevActivePlayer)) {
+        const playedCards = getPlayedCards(prevActivePlayer);
+        const entry8: CenterCardEntry = {
+          cards: playedCards,
+          playerId: prevActivePlayer,
+          animKey: ++animKeyRef.current,
+        };
+        const prevEntry: CenterPrevEntry = {
+          cards: prev.topPlay.cards,
+          playerId: prev.topPlayerId!,
+          wildcardRank: prev.topPlay.wildcardRank ?? undefined,
+        };
+        centerCurrentRef.current = entry8;
+        queueMicrotask(() => {
+          setCenterPrev(prevEntry);
+          setCenterCurrent(entry8);
+        });
+        eightStopClearTimerRef.current = setTimeout(() => {
+          centerCurrentRef.current = null;
+          eightStopClearTimerRef.current = null;
+          queueMicrotask(() => {
+            setCenterCurrent(null);
+            setCenterPrev(null);
+            setVisiblePassers(new Set());
+          });
+        }, 1500);
+      } else {
+        // Ended by passes — clear table and flash the last passer (bot only)
+        centerCurrentRef.current = null;
+        queueMicrotask(() => {
+          setCenterCurrent(null);
+          setCenterPrev(null);
+          setVisiblePassers(new Set());
+        });
+        if (prevActivePlayer !== HUMAN_ID) {
+          const existing = passTimersRef.current.get(prevActivePlayer);
+          if (existing) clearTimeout(existing);
+          queueMicrotask(() => {
+            setVisiblePassers((s) => new Set([...s, prevActivePlayer]));
+          });
+          const t = setTimeout(() => {
+            setVisiblePassers((s) => {
+              const next = new Set(s);
+              next.delete(prevActivePlayer);
+              return next;
+            });
+            passTimersRef.current.delete(prevActivePlayer);
+          }, 1000);
+          passTimersRef.current.set(prevActivePlayer, t);
+        }
+      }
+    }
+
+    // 8-stop on an empty table (8 was the very first card of a trick)
+    // Guard against trade-phase hand changes triggering this falsely
+    if (
+      gameState.phase === RoundPhase.Play &&
+      curr.topPlay === null &&
+      prev.topPlay === null &&
+      handShrank(prevActivePlayer)
+    ) {
+      passTimersRef.current.forEach(clearTimeout);
+      passTimersRef.current.clear();
+      if (eightStopClearTimerRef.current) {
+        clearTimeout(eightStopClearTimerRef.current);
+        eightStopClearTimerRef.current = null;
+      }
+      const playedCards = getPlayedCards(prevActivePlayer);
+      const entry8: CenterCardEntry = {
+        cards: playedCards,
+        playerId: prevActivePlayer,
+        animKey: ++animKeyRef.current,
+      };
+      centerCurrentRef.current = entry8;
+      queueMicrotask(() => {
+        setCenterPrev(null);
+        setCenterCurrent(entry8);
+      });
+      eightStopClearTimerRef.current = setTimeout(() => {
+        centerCurrentRef.current = null;
+        eightStopClearTimerRef.current = null;
+        queueMicrotask(() => {
+          setCenterCurrent(null);
+          setCenterPrev(null);
+          setVisiblePassers(new Set());
+        });
+      }, 1500);
+    }
+
+    // New mid-trick passers (not the last passer — last passer is handled above)
+    const prevPassed = new Set(prev.passedPlayerIds);
+    const newPassers = curr.passedPlayerIds.filter((id) => !prevPassed.has(id));
+    for (const pid of newPassers) {
+      const existing = passTimersRef.current.get(pid);
+      if (existing) clearTimeout(existing);
+      queueMicrotask(() => {
+        setVisiblePassers((s) => new Set([...s, pid]));
+      });
+      const t = setTimeout(() => {
+        setVisiblePassers((s) => {
+          const next = new Set(s);
+          next.delete(pid);
+          return next;
+        });
+        passTimersRef.current.delete(pid);
+      }, 1000);
+      passTimersRef.current.set(pid, t);
+    }
+  }, [gameState]);
+
+  useEffect(() => {
+    if (tablePhase !== "dealing") return;
+
+    let rafId = 0;
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const next = Math.min(1, (now - startedAt) / DEAL_DURATION);
+      setDealingStackProgress(next);
+      if (next < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [tablePhase, dealId]);
+
+  const showTable = tablePhase !== "pre";
+  const hands = gameState?.hands ?? null;
+  const [, botLeft, botTop, botRight] = hands ?? [[], [], [], []];
+
+  const prevRanks = gameState?.previousRanks;
+  const rankSuffix = (id: PlayerId) =>
+    prevRanks?.[id]?.toLowerCase() ?? null;
+
+  const playMode =
+    tablePhase === "playing" &&
+      gameState?.phase === RoundPhase.Play &&
+      gameState.activePlayerId === HUMAN_ID
+      ? {
+        canPass: canPass(gameState),
+        onPlay: handleHumanPlay,
+        onPass: handlePass,
+        playError,
+      }
+      : null;
+  const legalPlays =
+    playMode && gameState ? getLegalPlays(gameState, HUMAN_ID) : null;
+
+  const tradeMode =
+    tablePhase === "trading" &&
+      gameState?.phase === RoundPhase.Trade &&
+      isHumanTradeTurn(gameState, HUMAN_ID)
+      ? (() => {
+        const pending = getNextPendingTrade(gameState);
+        if (!pending) return null;
+        return {
+          pickCount: pending.requirement.count,
+          onConfirm: handleCompleteTrade,
+          error: playError,
+        };
+      })()
+      : null;
+
+  return (
+    <div
+      className="relative min-h-dvh w-full overflow-hidden bg-gradient-to-b from-emerald-950 via-emerald-900 to-green-950"
+      style={
+        gameState?.revolutionActive
+          ? { background: "linear-gradient(to bottom, #450a0a, #7f1d1d, #450a0a)" }
+          : undefined
+      }
+    >
+      <div
+        className={`relative flex min-h-dvh flex-col transition-[filter,opacity] duration-300 ${tablePhase === "pre" ? "blur-sm" : ""
+          }`}
+      >
+        {/* Table surface glow */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            backgroundImage: gameState?.revolutionActive
+              ? `radial-gradient(ellipse 80% 60% at 50% 45%, rgba(185, 16, 16, 0.35), transparent 70%)`
+              : `radial-gradient(ellipse 80% 60% at 50% 45%, rgba(16, 185, 129, 0.25), transparent 70%)`,
+          }}
+        />
+
+        <div className="relative flex min-h-dvh flex-col px-2 pb-6 pt-3">
+          {showTable && gameState && (
+            <div className="pointer-events-none absolute left-2 top-2 z-20 flex items-start gap-2">
+              <div className="flex flex-col gap-1 rounded-lg bg-black/30 px-3 py-2 text-left shadow-md ring-1 ring-emerald-500/20 backdrop-blur-sm">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/95">
+                  Scores
+                </p>
+                <ul className="flex flex-col gap-0.5 text-xs text-emerald-50">
+                  {playersByScoreDesc(gameState.scores).map((id) => (
+                    <li key={id} className="tabular-nums">
+                      <span className="font-medium text-emerald-100">
+                        {TABLE_PLAYER_NAMES[id]}
+                      </span>
+                      <span className="text-emerald-200/85"> {gameState.scores[id]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEndConfirm(true)}
+                className="pointer-events-auto mt-1 rounded bg-red-900/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-100 shadow ring-1 ring-red-500/50 transition hover:bg-red-800 active:scale-[0.98] drop-shadow-md backdrop-blur-sm"
+              >
+                End Game
+              </button>
+            </div>
+          )}
+
+          {/* Top bot */}
+          {showTable && hands && (
+            <div className="flex shrink-0 justify-center pt-3 pb-1">
+              <BotHandStrip
+                key={`bot-top-${dealId}`}
+                stackRef={stackRef}
+                cards={botTop}
+                botName="Bot C"
+                rankSuffix={rankSuffix(2 as PlayerId)}
+                rotationDeg={180}
+                showPass={visiblePassers.has(2 as PlayerId)}
+                className=""
+              />
+            </div>
+          )}
+
+          <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(48px,auto)_1fr_minmax(48px,auto)] items-center gap-1 px-0">
+            {showTable && hands && (
+              <BotHandStrip
+                key={`bot-left-${dealId}`}
+                stackRef={stackRef}
+                cards={botLeft}
+                botName="Bot B"
+                rankSuffix={rankSuffix(1 as PlayerId)}
+                rotationDeg={90}
+                showPass={visiblePassers.has(1 as PlayerId)}
+                className="justify-self-start pl-1"
+              />
+            )}
+
+            {/* Center area */}
+            <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-1">
+              {/* Deal stack — only rendered while not in play (keeps stackRef valid during deal) */}
+              {showTable && tablePhase !== "playing" && tablePhase !== "trading" && tablePhase !== "roundOver" && (
+                <CenterStack stackRef={stackRef} progress={stackProgress} />
+              )}
+
+              {/* Trade info panel */}
+              {tablePhase === "trading" && gameState?.tradeState && (() => {
+                const pending = getNextPendingTrade(gameState);
+                if (!pending) return null;
+                const { requirement: req } = pending;
+
+                if (req.receiverId !== HUMAN_ID) return null;
+
+                return (
+                  <div className="flex flex-col items-center justify-center rounded-lg bg-black/30 px-5 py-4 text-center backdrop-blur-sm ring-1 ring-white/10 shadow-lg">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Trading Phase</p>
+                    <p className="text-sm font-medium text-yellow-300 shadow-black drop-shadow-md">
+                      Select {req.count} card{req.count !== 1 ? 's' : ''} to give
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* Four dedicated play zones */}
+              {tablePhase === "playing" && (
+                <AllPlayZones current={centerCurrent} prev={centerPrev} />
+              )}
+            </div>
+
+            {showTable && hands && (
+              <BotHandStrip
+                key={`bot-right-${dealId}`}
+                stackRef={stackRef}
+                cards={botRight}
+                botName="Bot D"
+                rankSuffix={rankSuffix(3 as PlayerId)}
+                rotationDeg={-90}
+                showPass={visiblePassers.has(3 as PlayerId)}
+                className="justify-self-end pr-1"
+              />
+            )}
+          </div>
+
+          {/* Player */}
+          {showTable && hands && (
+            <div className="mt-auto w-full pb-4 pt-2">
+              <CardDemo
+                key={dealId}
+                variant="embedded"
+                externalStackRef={stackRef}
+                playerCards={hands[0]!}
+                legalPlays={legalPlays}
+                onDealComplete={onPlayerDealComplete}
+                gameHandSync={tablePhase === "playing" || tablePhase === "trading"}
+                playMode={playMode}
+                tradeMode={tradeMode}
+                playerRankLabel={rankSuffix(HUMAN_ID)}
+                className="flex w-full flex-col items-center gap-3"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {tablePhase === "pre" && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={startGame}
+              className="rounded-full bg-white px-10 py-3 text-base font-semibold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
+            >
+              Start Game
+            </button>
+            {playError ? (
+              <p className="max-w-sm text-center text-sm text-red-200">{playError}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {tablePhase === "roundOver" && gameState && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+          <div className="mx-4 flex max-w-md flex-col items-center gap-4 rounded-2xl bg-emerald-950/90 px-8 py-6 text-center shadow-xl ring-1 ring-emerald-500/30">
+            {gameState.matchFinished ? (
+              <>
+                <h2 className="text-lg font-semibold text-emerald-50">Match Over</h2>
+                <p className="text-base font-medium text-yellow-300">
+                  {playerLabel(getMatchWinner(gameState.scores))} wins!
+                </p>
+
+                <div className="flex flex-col rounded-lg bg-black/20 px-5 py-3 w-full my-2 ring-1 ring-emerald-500/20 text-left">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300/80 mb-2">
+                    Final Scores
+                  </p>
+                  <ul className="flex flex-col gap-1.5 text-sm">
+                    {playersByScoreDesc(gameState.scores).map((id) => (
+                      <li key={id} className="flex justify-between tabular-nums">
+                        <span className="font-medium text-emerald-100">
+                          {TABLE_PLAYER_NAMES[id]}
+                        </span>
+                        <span className="text-emerald-300 font-semibold">{gameState.scores[id]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex flex-col gap-2 w-full mt-1">
+                  <button
+                    type="button"
+                    onClick={() => { resetGame(); startGame(); }}
+                    className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98] w-full"
+                  >
+                    Play again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetGame}
+                    className="rounded-full bg-emerald-800/80 px-8 py-2.5 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98] w-full border border-emerald-700/50"
+                  >
+                    Back to menu
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-semibold text-emerald-50">
+                  Round {gameState.roundNumber - 1} complete
+                </h2>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleNextRound}
+                    className="rounded-full bg-white px-8 py-2.5 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-50 active:scale-[0.98]"
+                  >
+                    Next round
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetGame}
+                    className="rounded-full bg-emerald-800 px-8 py-2 text-sm font-medium text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98]"
+                  >
+                    Reset
+                  </button>
+                </div>
+                {playError && (
+                  <p className="text-xs text-red-300">{playError}</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tradeReceivedCards && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer"
+          onClick={() => setTradeReceivedCards(null)}
+        >
+          <div className="flex flex-col items-center gap-6 cursor-default rounded-2xl bg-emerald-950/90 px-10 py-8 shadow-2xl ring-1 ring-emerald-500/30" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold tracking-wide text-emerald-50 drop-shadow">Cards received:</h2>
+            <div className="flex justify-center scale-[1.2] my-4">
+              <FaceUpCards cards={tradeReceivedCards} />
+            </div>
+            <button
+              className="mt-2 rounded-full bg-white px-8 py-2.5 text-sm font-bold text-emerald-950 shadow-lg transition hover:bg-emerald-50 active:scale-[0.98]"
+              onClick={() => setTradeReceivedCards(null)}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showEndConfirm && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer"
+          onClick={() => setShowEndConfirm(false)}
+        >
+          <div className="flex flex-col items-center gap-6 cursor-default rounded-2xl bg-emerald-950/90 px-8 py-6 shadow-2xl ring-1 ring-emerald-500/30 text-center" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold tracking-wide text-emerald-50">End Game?</h2>
+            <p className="text-sm text-emerald-100/90 max-w-[240px]">
+              Are you sure you want to end the current game? All progress will be lost.
+            </p>
+            <div className="flex gap-3 mt-2 w-full">
+              <button
+                className="flex-1 rounded-full bg-red-900 px-4 py-2.5 text-sm font-bold text-red-100 shadow transition hover:bg-red-800 active:scale-[0.98] ring-1 ring-red-500/50"
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  handleEndMatch();
+                }}
+              >
+                End Game
+              </button>
+              <button
+                className="flex-1 rounded-full bg-emerald-800 px-4 py-2.5 text-sm font-bold text-emerald-100 shadow transition hover:bg-emerald-700 active:scale-[0.98] ring-1 ring-emerald-600/50"
+                onClick={() => setShowEndConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

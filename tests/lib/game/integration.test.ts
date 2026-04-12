@@ -25,11 +25,12 @@ function playLowestOrPass(state: GameState): GameState {
     }
 
     const sorted = [...legal].sort((a, b) => {
-        if (a.length !== b.length) return a.length - b.length;
-        return a[0].valueOf() - b[0].valueOf();
+        if (a.cards.length !== b.cards.length) return a.cards.length - b.cards.length;
+        return a.cards[0].valueOf() - b.cards[0].valueOf();
     });
 
-    const r = dispatch(state, { type: "play", playerId: pid, cards: sorted[0] });
+    const pick = sorted[0];
+    const r = dispatch(state, { type: "play", playerId: pid, cards: pick.cards, wildcardRank: pick.wildcardRank });
     if (!r.ok) throw new Error(`Play failed: ${r.reason}`);
     return r.state;
 }
@@ -84,6 +85,26 @@ function seededShuffle(seed: number): ShuffleFn {
     };
 }
 
+describe("single round reset semantics", () => {
+    it("fresh createInitialGameState is clean slate after one round", () => {
+        let state = createInitialGameState();
+        const r = startRound(state, seededShuffle(7));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        state = playRound(r.state);
+
+        expect(state.roundNumber).toBe(2);
+        expect(state.phase).toBe(RoundPhase.Deal);
+
+        const fresh = createInitialGameState();
+        expect(fresh.roundNumber).toBe(1);
+        expect(fresh.phase).toBe(RoundPhase.Deal);
+        expect(fresh.scores).toEqual([0, 0, 0, 0]);
+        expect(fresh.matchFinished).toBe(false);
+        expect(fresh.previousRanks).toBeNull();
+    });
+});
+
 describe("single round", () => {
     it("completes round 1 with all players finishing", () => {
         let state = createInitialGameState();
@@ -125,7 +146,7 @@ describe("full 3-round match", () => {
             }
         }
 
-        expect(state.matchFinished).toBe(true);
+        expect(state.matchFinished).toBe(false); // Infinite rounds
 
         for (const score of state.scores) {
             expect(score).toBeGreaterThanOrEqual(0);
