@@ -16,6 +16,7 @@ import type { Card, LegalPlay, Rank } from "@/lib/game/core/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";
+import type { GameTableLayout } from "@/lib/hooks/useGameLayout";
 
 /** 54-card deck → two players get 14, so max hand size is 14. */
 const MAX_HAND_SIZE = 14;
@@ -65,6 +66,8 @@ export type CardDemoProps = {
   tradeMode?: CardDemoTradeMode | null;
   /** Shown in embedded mode between the play/trade bar and the hand (e.g. previous-round rank). */
   playerRankLabel?: string | null;
+  /** When set (e.g. from `useGameLayout`), hand + bar use scaled dimensions. */
+  layout?: GameTableLayout | null;
 };
 
 export function CardDemo({
@@ -78,8 +81,17 @@ export function CardDemo({
   playMode = null,
   tradeMode = null,
   playerRankLabel = null,
+  layout = null,
 }: CardDemoProps) {
+  const cardW = layout?.cardW ?? CARD_W;
+  const cardH = layout?.cardH ?? CARD_H;
+  const cardStep = layout?.cardStep ?? CARD_STEP;
+  const playModeBarMinH = layout?.playModeBarMinH ?? PLAY_MODE_BAR_MIN_H;
+  const selectionLiftPx = layout?.selectionLiftPx ?? 20;
+  const exitLiftPx = layout ? Math.max(8, Math.round(18 * layout.scale)) : 18;
+  const handLiftRoom = Math.max(selectionLiftPx, exitLiftPx);
   const [drawnCards, setDrawnCards] = useState<Card[]>([]);
+  const handWidth = drawnCards.length > 0 ? cardW + (drawnCards.length - 1) * cardStep : cardW;
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(),
   );
@@ -245,7 +257,7 @@ export function CardDemo({
     setFlyOffsets(offsets);
 
     setDealPhase("atStack");
-  }, [dealPhase, drawnCards, stackRef]);
+  }, [dealPhase, drawnCards, stackRef, cardW, cardH, cardStep]);
 
   // atStack → double-rAF (guarantees a paint) → flying
   useEffect(() => {
@@ -317,9 +329,6 @@ export function CardDemo({
   }
 
   function getSlotStyle(index: number): React.CSSProperties {
-    const handOffset = (index - (drawnCards.length - 1) / 2) * CARD_STEP;
-    const baseTransform = `translateX(${handOffset}px)`;
-
     const offset = flyOffsets[index] ?? { x: 0, y: 0 };
 
     switch (dealPhase) {
@@ -327,21 +336,21 @@ export function CardDemo({
         return { opacity: 0 };
       case "atStack":
         return {
-          transform: `${baseTransform} translate(${offset.x}px, ${offset.y}px)`,
+          transform: `translate(${offset.x}px, ${offset.y}px)`,
           opacity: 1,
         };
       case "flying":
       case "flipping":
         return {
-          transform: `${baseTransform} translate(0, 0)`,
+          transform: "translate(0, 0)",
           transition: `transform ${FLY_DURATION}ms ease-out ${index * FLY_STAGGER}ms`,
           opacity: 1,
         };
       case "done":
         return {
-          transform: `${baseTransform} ${
-            selectedIndices.has(index) ? "translateY(-20px)" : "translateY(0)"
-          }`,
+          transform: selectedIndices.has(index)
+            ? `translateY(-${selectionLiftPx}px)`
+            : "translateY(0)",
           transition: "transform 150ms ease",
           opacity: 1,
         };
@@ -410,28 +419,28 @@ export function CardDemo({
       {showOwnStack && (
         <div
           className="relative w-full flex items-center justify-center"
-          style={{ height: CARD_H + 24 }}
+          style={{ height: cardH + 24 }}
         >
           <div
             ref={internalStackRef}
             className={`relative transition-transform duration-300 ${
               isAnimating ? "scale-95" : "scale-100"
             }`}
-            style={{ width: CARD_W, height: CARD_H }}
+            style={{ width: cardW, height: cardH }}
           >
             <div
-              style={{ width: CARD_W, height: CARD_H }}
+              style={{ width: cardW, height: cardH }}
               className="absolute -top-1 -left-1 opacity-40 pointer-events-none"
             >
               <CardBack />
             </div>
             <div
-              style={{ width: CARD_W, height: CARD_H }}
+              style={{ width: cardW, height: cardH }}
               className="absolute -top-0.5 -left-0.5 opacity-70 pointer-events-none"
             >
               <CardBack />
             </div>
-            <div style={{ width: CARD_W, height: CARD_H }} className="relative shadow-lg">
+            <div style={{ width: cardW, height: cardH }} className="relative shadow-lg">
               <CardBack />
             </div>
           </div>
@@ -441,7 +450,7 @@ export function CardDemo({
       {reservePlayModeBarSpace && (
         <div
           className="flex w-full max-w-4xl flex-col items-center justify-start gap-2"
-          style={{ minHeight: PLAY_MODE_BAR_MIN_H }}
+          style={{ minHeight: playModeBarMinH }}
         >
           {showTradeModeBar && tradeMode ? (
             <>
@@ -587,8 +596,8 @@ export function CardDemo({
 
       {/* Hand */}
       <div
-        className="flex items-end justify-center"
-        style={{ minHeight: CARD_H + 20 }}
+        className="flex w-full items-end justify-center"
+        style={{ minHeight: cardH + handLiftRoom + 8 }}
       >
         {variant === "standalone" &&
           drawnCards.length === 0 &&
@@ -598,21 +607,22 @@ export function CardDemo({
             </p>
           )}
         {drawnCards.length > 0 && (
-          <div className="relative w-full overflow-visible" style={{ height: CARD_H }}>
-            {exitingCards.map(({ card, index, handSize }) => {
-              const handOffset = (index - (handSize - 1) / 2) * CARD_STEP;
-              const baseTransform = `translateX(${handOffset}px)`;
-              return (
+          <div className="w-full overflow-x-auto overflow-y-hidden px-2 pb-1">
+            <div
+              className="relative mx-auto"
+              style={{ width: handWidth, height: cardH + handLiftRoom }}
+            >
+              {exitingCards.map(({ card, index }) => (
                 <div
                   key={`exit-${drawId}-${card.rank}:${card.suit}`}
                   style={{
                     position: "absolute",
-                    left: "50%",
-                    top: 0,
-                    width: CARD_W,
-                    height: CARD_H,
+                    left: index * cardStep,
+                    top: handLiftRoom,
+                    width: cardW,
+                    height: cardH,
                     zIndex: index,
-                    transform: `${baseTransform} translateY(-18px)`,
+                    transform: `translateY(-${exitLiftPx}px)`,
                     opacity: exitingCardsFading ? 0 : 1,
                     transition: "transform 280ms ease-out, opacity 260ms ease-out",
                     pointerEvents: "none",
@@ -620,133 +630,133 @@ export function CardDemo({
                 >
                   <svg
                     viewBox="0 0 80 112"
-                    width={CARD_W}
-                    height={CARD_H}
+                    width={cardW}
+                    height={cardH}
                     xmlns="http://www.w3.org/2000/svg"
                     style={{ display: "block" }}
                   >
                     <CardFaceContent rank={card.rank} suit={card.suit} />
                   </svg>
                 </div>
-              );
-            })}
-            {drawnCards.map((card, i) => {
-              const isSelected = selectedIndices.has(i);
-              const isGreyed =
-                !playMode && !tradeMode ||
-                (playMode && legalCardIndices !== null && !legalCardIndices.has(i));
-              return (
-                <div
-                  key={`${drawId}-${card.rank}:${card.suit}`}
-                  ref={(el) => {
-                    cardSlotsRef.current[i] = el;
-                  }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    toggleSelection(i);
-                  }}
-                  data-card-demo-interactive="true"
-                  className={isGreyed ? "cursor-not-allowed" : "cursor-pointer"}
-                  style={{
-                    position: "absolute",
-                    left: "50%",
-                    top: 0,
-                    width: CARD_W,
-                    height: CARD_H,
-                    zIndex: i,
-                    ...getSlotStyle(i),
-                  }}
-                  title={
-                    dealPhase === "done"
-                      ? cardLabel(card.rank, card.suit)
-                      : undefined
-                  }
-                >
-                  {/* 3-D flip container */}
+              ))}
+              {drawnCards.map((card, i) => {
+                const isSelected = selectedIndices.has(i);
+                const isGreyed =
+                  !playMode && !tradeMode ||
+                  (playMode && legalCardIndices !== null && !legalCardIndices.has(i));
+                return (
                   <div
-                    style={{
-                      width: CARD_W,
-                      height: CARD_H,
-                      perspective: 900,
+                    key={`${drawId}-${card.rank}:${card.suit}`}
+                    ref={(el) => {
+                      cardSlotsRef.current[i] = el;
                     }}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleSelection(i);
+                    }}
+                    data-card-demo-interactive="true"
+                    className={isGreyed ? "cursor-not-allowed" : "cursor-pointer"}
+                    style={{
+                      position: "absolute",
+                      left: i * cardStep,
+                      top: handLiftRoom,
+                      width: cardW,
+                      height: cardH,
+                      zIndex: i,
+                      ...getSlotStyle(i),
+                    }}
+                    title={
+                      dealPhase === "done"
+                        ? cardLabel(card.rank, card.suit)
+                        : undefined
+                    }
                   >
+                    {/* 3-D flip container */}
                     <div
                       style={{
-                        width: CARD_W,
-                        height: CARD_H,
-                        position: "relative",
-                        ...getFlipStyle(i),
+                        width: cardW,
+                        height: cardH,
+                        perspective: 900,
                       }}
                     >
-                      {/* Back face */}
                       <div
                         style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: CARD_W,
-                          height: CARD_H,
-                          backfaceVisibility: "hidden",
-                          WebkitBackfaceVisibility: "hidden",
+                          width: cardW,
+                          height: cardH,
+                          position: "relative",
+                          ...getFlipStyle(i),
                         }}
                       >
-                        <CardBack />
-                      </div>
-
-                      {/* Front face — pre-rotated so it shows after flip */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: CARD_W,
-                          height: CARD_H,
-                          backfaceVisibility: "hidden",
-                          WebkitBackfaceVisibility: "hidden",
-                          transform: "rotateY(180deg)",
-                        }}
-                      >
-                        <svg
-                          viewBox="0 0 80 112"
-                          width={CARD_W}
-                          height={CARD_H}
-                          xmlns="http://www.w3.org/2000/svg"
-                          style={{ display: "block" }}
+                        {/* Back face */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: cardW,
+                            height: cardH,
+                            backfaceVisibility: "hidden",
+                            WebkitBackfaceVisibility: "hidden",
+                          }}
                         >
-                          <CardFaceContent rank={card.rank} suit={card.suit} />
-                        </svg>
-                        {/* Selection ring overlay */}
-                        {isSelected && dealPhase === "done" && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              borderRadius: 6,
-                              outline: "6px solid rgb(255, 255, 0)",
-                              outlineOffset: 0,
-                              pointerEvents: "none",
-                              opacity: 0.45,
-                            }}
-                          />
-                        )}
-                        {/* Grey overlay for non-legal cards */}
-                        {isGreyed && dealPhase === "done" && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              borderRadius: 6,
-                              backgroundColor: "rgba(0, 0, 0, 0.55)",
-                              pointerEvents: "none",
-                            }}
-                          />
-                        )}
+                          <CardBack />
+                        </div>
+
+                        {/* Front face — pre-rotated so it shows after flip */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: cardW,
+                            height: cardH,
+                            backfaceVisibility: "hidden",
+                            WebkitBackfaceVisibility: "hidden",
+                            transform: "rotateY(180deg)",
+                          }}
+                        >
+                          <svg
+                            viewBox="0 0 80 112"
+                            width={cardW}
+                            height={cardH}
+                            xmlns="http://www.w3.org/2000/svg"
+                            style={{ display: "block" }}
+                          >
+                            <CardFaceContent rank={card.rank} suit={card.suit} />
+                          </svg>
+                          {/* Selection ring overlay */}
+                          {isSelected && dealPhase === "done" && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                borderRadius: 6,
+                                outline: "6px solid rgb(255, 255, 0)",
+                                outlineOffset: 0,
+                                pointerEvents: "none",
+                                opacity: 0.45,
+                              }}
+                            />
+                          )}
+                          {/* Grey overlay for non-legal cards */}
+                          {isGreyed && dealPhase === "done" && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                borderRadius: 6,
+                                backgroundColor: "rgba(0, 0, 0, 0.55)",
+                                pointerEvents: "none",
+                              }}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
