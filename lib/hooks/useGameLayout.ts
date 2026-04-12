@@ -72,14 +72,18 @@ let cachedLayout = DEFAULT_SERVER_LAYOUT;
 
 /**
  * Responsive scale: shrink on narrow or short viewports.
- * Reference: ~430×750 comfortable table size.
+ * Landscape keeps current reference. Portrait uses a wider reference width
+ * and lower floor so table shrinks earlier on phones.
  */
 export function computeGameTableLayout(
   viewportWidth: number,
   viewportHeight: number,
 ): GameTableLayout {
-  const raw = Math.min(viewportWidth / 430, viewportHeight / 750);
-  const scale = Math.min(1, Math.max(0.65, raw));
+  const isPortrait = viewportHeight >= viewportWidth;
+  const referenceWidth = isPortrait ? 500 : 430;
+  const minScale = isPortrait ? 0.56 : 0.65;
+  const raw = Math.min(viewportWidth / referenceWidth, viewportHeight / 750);
+  const scale = Math.min(1, Math.max(minScale, raw));
 
   const stackCardW = roundScale(scale, BASE.stackCardW);
   const stackCardH = Math.round(stackCardW * CARD_ASPECT);
