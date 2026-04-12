@@ -8,12 +8,12 @@ import {
     PlayerRank,
     RoundPhase,
     type ShuffleFn,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 import {
     createInitialGameState,
     dispatch,
     startRound,
-} from "../../../lib/game/engine";
+} from "@/lib/game/engine/engine";
 
 // Deterministic "shuffle" — just returns the deck as-is
 const noShuffle: ShuffleFn = (deck) => deck;

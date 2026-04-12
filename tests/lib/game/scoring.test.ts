@@ -4,13 +4,13 @@ import {
     type PlayerId,
     PlayerRank,
     RoundPhase,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 import {
     applyRoundScores,
     assignRoundRanks,
     getMatchWinner,
     isGameOver,
-} from "../../../lib/game/scoring";
+} from "@/lib/game/scoring/scoring";
 
 function makeFinishedRoundState(
     finishOrder: PlayerId[],

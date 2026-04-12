@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chooseBotPlay } from "../../../lib/game/bots";
-import { createInitialGameState } from "../../../lib/game/engine";
+import { chooseBotPlay } from "@/lib/game/bots/bots";
+import { createInitialGameState } from "@/lib/game/engine/engine";
 import {
     Card,
     type GameState,
@@ -8,7 +8,7 @@ import {
     PlayPattern,
     type PlayerId,
     RoundPhase,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 
 function baseState(overrides: Partial<GameState>): GameState {
     return { ...createInitialGameState(), ...overrides };

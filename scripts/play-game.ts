@@ -2,17 +2,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { chooseBotPlay } from "../lib/game/bots";
-import { createInitialGameState, dispatch } from "../lib/game/engine";
-import { getLegalPlays } from "../lib/game/validation";
-import { getRankOrder, TOTAL_ROUNDS } from "../lib/game/constants";
+import { chooseBotPlay } from "../lib/game/bots/bots";
+import { createInitialGameState, dispatch } from "../lib/game/engine/engine";
+import { getLegalPlays } from "../lib/game/rules/validation";
+import { getRankOrder, TOTAL_ROUNDS } from "../lib/game/core/constants";
 import {
     formatActionLine,
     formatHandsBlock,
     formatLogEvent,
     formatRoleLines,
     formatTradeLines,
-} from "../lib/game/logging";
+} from "../lib/game/cli/logging";
 import {
     type ActionResult,
     type Card,
@@ -23,7 +23,7 @@ import {
     type Rank,
     PlayerRank,
     RoundPhase,
-} from "../lib/game/types";
+} from "../lib/game/core/types";
 import {
     buildPlayOptions,
     canPass,
@@ -37,7 +37,7 @@ import {
     playerLabel,
     sortCards,
     type TrickHistoryEntry,
-} from "../lib/game/cli-helpers";
+} from "../lib/game/cli/cli-helpers";
 import {
     buildBotTradeAction,
     getNextPendingTrade,

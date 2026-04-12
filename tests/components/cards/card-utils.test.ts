@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { drawRandomCard } from "../../../components/cards/card-utils";
-import { SUITS } from "../../../lib/game/constants";
-import { DEFAULT_RANK_SEQUENCE } from "../../../lib/game/types";
+import { SUITS } from "@/lib/game/core/constants";
+import { DEFAULT_RANK_SEQUENCE } from "@/lib/game/core/types";
 
 describe("drawRandomCard", () => {
   it("returns a card with a valid rank", () => {

@@ -6,11 +6,11 @@ import {
     PlayPattern,
     PlayerId,
     RoundPhase,
-} from "../../../lib/game/core/types";
+} from "@/lib/game/core/types";
 import {
     createInitialGameState,
     dispatch,
-} from "../../../lib/game/engine/engine";
+} from "@/lib/game/engine/engine";
 
 describe("3s beats Joker", () => {
     it("ends trick immediately when 3S beats a single Joker", () => {

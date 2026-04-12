@@ -1,4 +1,4 @@
-import type { Rank, Suit } from "../../lib/game/types";
+import type { Rank, Suit } from "@/lib/game/core/types";
 
 export interface SuitMeta {
   label: string;

@@ -1,4 +1,4 @@
-import type { Suit } from "@/lib/game/types";
+import type { Suit } from "@/lib/game/core/types";
 import { SUIT_META } from "./suit-metadata";
 
 interface SuitIconProps {

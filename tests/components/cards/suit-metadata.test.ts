@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SUIT_META, cardLabel, rankLabel } from "../../../components/cards/suit-metadata";
-import type { Suit } from "../../../lib/game/types";
+import type { Suit } from "@/lib/game/core/types";
 
 describe("SUIT_META", () => {
   it("has correct label for each suit", () => {

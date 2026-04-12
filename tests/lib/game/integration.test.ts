@@ -5,14 +5,14 @@ import {
     PlayerRank,
     RoundPhase,
     type ShuffleFn,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 import {
     createInitialGameState,
     dispatch,
     startRound,
-} from "../../../lib/game/engine";
-import { getLegalPlays } from "../../../lib/game/validation";
-import { applyTrade, buildTradeState } from "../../../lib/game/trade";
+} from "@/lib/game/engine/engine";
+import { getLegalPlays } from "@/lib/game/rules/validation";
+import { applyTrade, buildTradeState } from "@/lib/game/trade/trade";
 
 function playLowestOrPass(state: GameState): GameState {
     const pid = state.activePlayerId;

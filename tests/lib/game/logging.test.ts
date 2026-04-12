@@ -5,8 +5,8 @@ import {
     formatLogEvent,
     formatRoleLines,
     formatTradeLines,
-} from "../../../lib/game/logging";
-import { Card, PlayerRank } from "../../../lib/game/types";
+} from "@/lib/game/cli/logging";
+import { Card, PlayerRank } from "@/lib/game/core/types";
 
 describe("game logging helpers", () => {
     it("formats hand blocks with player letters and sizes", () => {

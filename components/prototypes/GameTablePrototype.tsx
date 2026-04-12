@@ -12,24 +12,24 @@ import {
 import { CardDemo } from "@/components/prototypes/CardDemo";
 import { CardBack } from "@/components/cards/CardBack";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
-import { chooseBotPlay } from "@/lib/game/bots";
+import { chooseBotPlay } from "@/lib/game/bots/bots";
 import {
   canPass,
   formatScores,
   formatTradeRequirement,
   playerLabel,
-} from "@/lib/game/cli-helpers";
-import { getMatchWinner } from "@/lib/game/scoring";
+} from "@/lib/game/cli/cli-helpers";
+import { getMatchWinner } from "@/lib/game/scoring/scoring";
 import {
   buildBotTradeAction,
   getNextPendingTrade,
   isHumanTradeTurn,
-} from "@/lib/game";
-import { createInitialGameState, dispatch } from "@/lib/game/engine";
-import { shuffleDeck } from "@/lib/game/shuffle-deck";
-import { getLegalPlays } from "@/lib/game/validation";
-import type { Card, GameEvent, GameState, PlayerId, Rank, TrickState } from "@/lib/game/types";
-import { RoundPhase } from "@/lib/game/types";
+} from "@/lib/game/trade/helpers";
+import { createInitialGameState, dispatch } from "@/lib/game/engine/engine";
+import { shuffleDeck } from "@/lib/game/utils/shuffle-deck";
+import { getLegalPlays } from "@/lib/game/rules/validation";
+import type { Card, GameEvent, GameState, PlayerId, Rank, TrickState } from "@/lib/game/core/types";
+import { RoundPhase } from "@/lib/game/core/types";
 
 const STACK_CARD_W = 96;
 const STACK_CARD_H = Math.round(STACK_CARD_W * (112 / 80));

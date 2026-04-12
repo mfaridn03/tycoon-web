@@ -1,5 +1,5 @@
-import { createDeck } from "../../lib/game/constants";
-import type { Card } from "../../lib/game/types";
+import { createDeck } from "@/lib/game/core/constants";
+import type { Card } from "@/lib/game/core/types";
 
 export function drawRandomCard(): Card {
   const deck = createDeck();

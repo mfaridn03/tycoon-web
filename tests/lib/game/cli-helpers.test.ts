@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { REVERSED_RANK_ORDER } from "@/lib/game/core/constants";
 import {
     Card,
+    DEFAULT_RANK_ORDER,
     type GameState,
     Play,
     type PlayerId,
     PlayerRank,
-} from "../../../lib/game/types";
-import { DEFAULT_RANK_ORDER } from "../../../lib/game/types";
-import { REVERSED_RANK_ORDER } from "../../../lib/game/constants";
+} from "@/lib/game/core/types";
 import {
     buildPlayOptions,
     canPass,
@@ -19,7 +19,7 @@ import {
     playerLabel,
     selectLowestCards,
     sortCards,
-} from "../../../lib/game/cli-helpers";
+} from "@/lib/game/cli/cli-helpers";
 
 // ---------------------------------------------------------------------------
 // Card formatting

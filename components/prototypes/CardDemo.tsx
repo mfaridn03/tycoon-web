@@ -9,10 +9,10 @@ import {
   useCallback,
   type RefObject,
 } from "react";
-import { createDeck } from "@/lib/game/constants";
-import { shuffleDeck } from "@/lib/game/shuffle-deck";
-import { sortPlayerHand } from "@/lib/game/sort-player-hand";
-import type { Card, LegalPlay, Rank } from "@/lib/game/types";
+import { createDeck } from "@/lib/game/core/constants";
+import { shuffleDeck } from "@/lib/game/utils/shuffle-deck";
+import { sortPlayerHand } from "@/lib/game/utils/sort-player-hand";
+import type { Card, LegalPlay, Rank } from "@/lib/game/core/types";
 import { CardFaceContent } from "@/components/cards/PlayingCard";
 import { CardBack } from "@/components/cards/CardBack";
 import { cardLabel } from "@/components/cards/suit-metadata";

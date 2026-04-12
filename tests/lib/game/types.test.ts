@@ -8,7 +8,7 @@ import {
     PlayEffect,
     PlayPattern,
     setActiveRankOrder,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 
 describe("Card", () => {
     afterEach(() => {

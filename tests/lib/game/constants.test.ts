@@ -4,11 +4,11 @@ import {
     getRankOrder,
     REVERSED_RANK_ORDER,
     SUITS,
-} from "../../../lib/game/constants";
+} from "@/lib/game/core/constants";
 import {
     DEFAULT_RANK_ORDER,
     DEFAULT_RANK_SEQUENCE,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 
 describe("createDeck", () => {
     it("produces 54 unique cards", () => {

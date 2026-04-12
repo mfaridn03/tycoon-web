@@ -5,8 +5,8 @@ import {
     type PlayerId,
     PlayerRank,
     RoundPhase,
-} from "../../../lib/game/types";
-import { applyTrade, startTradePhase } from "../../../lib/game/trade";
+} from "@/lib/game/core/types";
+import { applyTrade, startTradePhase } from "@/lib/game/trade/trade";
 
 function makeTradeState(): GameState {
     // Ranks: P0=Tycoon, P1=Rich, P2=Poor, P3=Beggar

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getRankOrder } from "../../../lib/game/constants";
+import { getRankOrder } from "@/lib/game/core/constants";
 import {
     Card,
     type GameState,
@@ -8,11 +8,11 @@ import {
     PlayPattern,
     RoundPhase,
     type TrickState,
-} from "../../../lib/game/types";
+} from "@/lib/game/core/types";
 import {
     getLegalPlays,
     validatePlay,
-} from "../../../lib/game/validation";
+} from "@/lib/game/rules/validation";
 
 function makeState(overrides: Partial<GameState> = {}): GameState {
     return {
