@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { GameTablePrototype } from "@/components/prototypes/GameTablePrototype";
 
 export const metadata: Metadata = {
-  title: "Table prototype",
-  description: "Rough mobile card-table UI prototype",
+  title: "Tycoon",
+  description: "Tycoon card game",
 };
 
 export default function Home() {
